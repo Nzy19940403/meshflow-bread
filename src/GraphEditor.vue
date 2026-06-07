@@ -569,14 +569,18 @@ function advanceMonth() {
   // 计算报废率（产能过剩比例）
   const waste = (cap > demand && cap > 0) ? Math.round((cap - demand) / cap * 1000) / 1000 : 0
   props.engine.setCellValue('B18', String(waste))
-  // 品牌积累: 口味×流量→知名度增长, 每月5%自然衰减
+  // 品牌积累: 口味×流量→知名度增长, 每月非线性衰减
   const taste = Number(readValue('B20')) || 0
   const grade = Number(readValue('B15')) || 5
   const mkt = Number(readValue('B13')) || 0
   const oldBrand = Number(readValue('B19')) || 0
   const traffic = Math.round(150 * Math.pow(grade, 1.7)) + Math.sqrt(Math.max(0, mkt)) * 15
-  const growth = Math.round(taste * traffic / 100)
-  const decay = Math.round(oldBrand * 0.05)
+  // 基础口碑增长: 即使0流量/0营销, 口味好也能靠街坊自发涨知名度
+  const mouthGrowth = 10  // 保底值, 口味越好涨越快
+  const growth = Math.round(taste * (traffic / 100 + mouthGrowth))
+  // 非线性衰减: 知名度越高忘得越快(高处不胜寒)
+  const decayRate = Math.max(0.05, oldBrand * 0.01)  // 知名度20时衰减率=20%
+  const decay = Math.round(oldBrand * decayRate)
   const newBrand = Math.max(0, oldBrand + growth - decay)
   props.engine.setCellValue('B19', String(newBrand))
   triggerPropagation()

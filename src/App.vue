@@ -421,9 +421,11 @@ onMounted(() => {
           const s = (shortage !== null && shortage !== undefined) ? Number(shortage) : 0
           const b = (brand !== null && brand !== undefined) ? Number(brand) : 0
 
-          // 流量 = 地段指数(等级^1.7) + 营销√效应
+          // 流量 = 地段指数(等级^1.7) + 营销√效应 × 低价加成
           // 顶级地段(10级)流量是偏远(1级)的50倍，符合幂律分布
-          const traffic = Math.round(150 * Math.pow(g, 1.7)) + Math.sqrt(Math.max(0, m)) * 15
+          // 低价营销加成: 售价<¥15时广告效果倍增, 如¥10时效果×2
+          const priceDiscountBoost = p < 15 ? 1.0 + (15 - p) * 0.2 : 1.0
+          const traffic = Math.round(150 * Math.pow(g, 1.7)) + Math.round(Math.sqrt(Math.max(0, m)) * 15 * priceDiscountBoost)
 
           // 品牌溢价: 每点知名度 +¥0.5 价格容忍度
           const brandPremium = b * 0.5

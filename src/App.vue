@@ -443,8 +443,29 @@ onMounted(() => {
         triggerKeys: ['value', 'value', 'value', 'value', 'value'],
       } as any)
 
-      // —— B3 产能: 同权重共同预言 (每条纠缠独立计算, proposal.set 同权1) ——
-      // 每条纠缠各自用 GetValue 读取所有输入做全量计算
+      // —— B3 产能: 6条同权重共同预言 (B16/B4/B9/B14/B17/B18 → B3, 权重1) ——
+      //
+      // 【设计模式: 同权重共同预言 (Same-Weight Combined Prophecy)】
+      // 当多个因素（面积、人工、上期需求、加工成本、缺货率、报废率）共同决定一个节点(B3)时，
+      // 不能用不同权重（权10/8/7），因为重仲裁会让低权重提案被丢弃。
+      // 也不能只用一个 SetRule（虽然数学正确），但 SetRule 只能被 triggerKeys 的变化触发，
+      // 无法响应被 GetValue 读取但不属于 triggerKeys 的输入变化。
+      //
+      // 方案：每条纠缠各自注册 cause，用 propose.set('value', 全量计算结果, 1) 提交同权提案。
+      // Ghost Resolution 第一趟（Pass 1）扫描 find highest-weight set:
+      //   if (weight >= bestSetWeight) → bestSetVal = p.value  // 同权替换
+      // 最后一个在 _ghostBuffer 中的提案胜出，但因为所有提案都基于 GetValue 读取当前已结算值，
+      // 计算结果一致，谁胜出不重要。
+      //
+      // 优点:
+      //   1. 每个 cause 独立触发 → 改面积(B14)不依赖 B16 是否变化
+      //   2. 所有输入都参与计算（非只读 triggerKeys 触发）
+      //   3. 不涉及权重竞争，同权重下算术意义上公平
+      //   4. 纯 GetValue 读值，不额外注册 Rule → 不产生额外拓扑边
+      //
+      // PITFALL: 如果公式中有副作用或非确定性逻辑（如 random()），同权重会竞态。
+      // 本模型全为确定性计算，安全。
+      //
       const computeB3Capacity = () => {
         const rawArea = engine2.raw.data.GetValue('B14', 'value')
         const rawLabor = engine2.raw.data.GetValue('B9', 'value')

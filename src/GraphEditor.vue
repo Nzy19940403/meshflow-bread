@@ -286,7 +286,7 @@
           ⚡ B2(需求) SetRule: 价格+等级+营销 减去 B17缺货惩罚
         </div>
         <div v-if="selectedNode === 'B3'" class="detail-warning">
-          ⚡ B3(产能) SetRule: B14面积+B9人工+B16上期+B4效率+B17信心+B18报废
+          ⚡ B3(产能) 同权共预: 6条纠缠(set,权1)独立计算→结果一致
         </div>
       </div>
     </div>
@@ -418,15 +418,19 @@ const edges = ref([
   { id: 'sr-b19-b2', source: 'B19', target: 'B2', label: '品牌溢价',
     style: { stroke: srColor, strokeWidth: 2 }, labelStyle: { fill: srColor, fontSize: 9 }, animated: true },
 
-  // — B3 产能 SetRule: 多因素综合计算 (面积×25, 人工÷5, 上期需求×系数, 成本红利) —
-  { id: 'sr-b16-b3', source: 'B16', target: 'B3', label: '上期需求→计划',
-    style: { stroke: srColor, strokeWidth: 2, strokeDasharray: '4 2' }, labelStyle: { fill: srColor, fontSize: 9 } },
-  { id: 'sr-b4-b3', source: 'B4', target: 'B3', label: '效率红利',
-    style: { stroke: srColor, strokeWidth: 2, strokeDasharray: '4 2' }, labelStyle: { fill: srColor, fontSize: 9 } },
-  { id: 'sr-b17-b3', source: 'B17', target: 'B3', label: '缺货→信心',
-    style: { stroke: srColor, strokeWidth: 2, strokeDasharray: '4 2' }, labelStyle: { fill: srColor, fontSize: 9 } },
-  { id: 'sr-b18-b3', source: 'B18', target: 'B3', label: '报废→保守',
-    style: { stroke: '#8b5cf6', strokeWidth: 1.5, strokeDasharray: '3 3' }, labelStyle: { fill: '#8b5cf6', fontSize: 9 } },
+  // — B3 产能: 6条同权重共同预言 (B16/B4/B9/B14/B17/B18 → B3, 权重1) —
+  { id: 'ent-b16-b3', source: 'B16', target: 'B3', label: '上期需求→计划',
+    style: { stroke: entColor, strokeWidth: 2, strokeDasharray: '6 3' }, labelStyle: { fill: entColor, fontSize: 9 }, animated: true },
+  { id: 'ent-b4-b3', source: 'B4', target: 'B3', label: '效率红利',
+    style: { stroke: entColor, strokeWidth: 2, strokeDasharray: '6 3' }, labelStyle: { fill: entColor, fontSize: 9 }, animated: true },
+  { id: 'ent-b9-b3', source: 'B9', target: 'B3', label: '人力天花板',
+    style: { stroke: entColor, strokeWidth: 2, strokeDasharray: '6 3' }, labelStyle: { fill: entColor, fontSize: 9 }, animated: true },
+  { id: 'ent-b14-b3', source: 'B14', target: 'B3', label: '面积天花板',
+    style: { stroke: entColor, strokeWidth: 2, strokeDasharray: '6 3' }, labelStyle: { fill: entColor, fontSize: 9 }, animated: true },
+  { id: 'ent-b17-b3', source: 'B17', target: 'B3', label: '缺货→信心',
+    style: { stroke: entColor, strokeWidth: 2, strokeDasharray: '6 3' }, labelStyle: { fill: entColor, fontSize: 9 }, animated: true },
+  { id: 'ent-b18-b3', source: 'B18', target: 'B3', label: '报废→保守',
+    style: { stroke: '#8b5cf6', strokeWidth: 1.5, strokeDasharray: '3 3' }, labelStyle: { fill: '#8b5cf6', fontSize: 9 }, animated: true },
 ])
 
 // === 选中节点 ===
@@ -613,7 +617,7 @@ const PROPAGATION_STEPS: { nodes: string[]; edges: string[]; msg: string }[] = [
   { nodes: ['B5'], edges: ['sr-b14-b5', 'sr-b15-b5'], msg: '① SetRules: 房租=面积×等级×(20−面积×0.05) 非线性折扣' },
   { nodes: ['B16', 'B17'], edges: [], msg: '② 下月: 快照需求→B16, 缺货率→B17' },
   { nodes: ['B2'], edges: ['sr-b1-b2', 'sr-b15-b2', 'sr-b13-b2', 'sr-b17-b2', 'sr-b19-b2'], msg: '③ SetRules: 需求=交通流量×品牌留存率−缺货惩罚' },
-  { nodes: ['B3'], edges: ['sr-b14-b3', 'sr-b9-b3', 'sr-b16-b3', 'sr-b4-b3', 'sr-b17-b3', 'sr-b18-b3'], msg: '④ SetRule: 产能=min(硬约束, 需求计划+效率红利)' },
+  { nodes: ['B3'], edges: ['ent-b16-b3', 'ent-b4-b3', 'ent-b9-b3', 'ent-b14-b3', 'ent-b17-b3', 'ent-b18-b3'], msg: '④ 同权共预: 6条纠缠各算全量→B3' },
   { nodes: ['B4'], edges: ['sr-b3-b4'], msg: '⑤ SetRule: 规模效应 产能越高→加工成本越低(下限¥0.1)' },
   { nodes: ['B12'], edges: ['sr-b10-b12', 'sr-b11-b12', 'sr-b4-b12', 'sr-b3-b12'], msg: '⑥ 供应链→生产成本' },
   { nodes: ['B6'], edges: ['sr-b1-b6', 'sr-b2-b6', 'sr-b3-b6'], msg: '⑦ 收入=售价×实际销售(产能限制)' },
@@ -676,16 +680,16 @@ function triggerPropagation() {
 
 function clearEdgeHighlights() {
   for (const edge of edges.value) {
+    const isEnt = edge.id.startsWith('ent')
     // B18→B3 has custom style
-    if (edge.id === 'sr-b18-b3') {
+    if (edge.id === 'ent-b18-b3') {
       edge.style = { stroke: '#8b5cf6', strokeWidth: 1.5, strokeDasharray: '3 3' }
       continue
     }
-    const isDashed = ['sr-b14-', 'sr-b9-', 'sr-b13-', 'sr-b17-', 'sr-b16-', 'sr-b4-', 'sr-b18-', 'sr-b3-b21', 'sr-b3-b20', 'sr-b14-b21', 'sr-b14-b20'].some(p => edge.id.startsWith(p))
     edge.style = {
-      stroke: srColor,
+      stroke: isEnt ? entColor : srColor,
       strokeWidth: 2,
-      ...(isDashed ? { strokeDasharray: '4 2' } : {}),
+      ...(isEnt ? { strokeDasharray: '6 3' } : {}),
     }
   }
 }

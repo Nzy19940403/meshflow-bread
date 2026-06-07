@@ -443,39 +443,75 @@ onMounted(() => {
         triggerKeys: ['value', 'value', 'value', 'value', 'value'],
       } as any)
 
-      // —— B3 产能: 多因素综合 SetRule（替代原来的4条纠缠仲裁） ——
-      // 输入: B14面积, B9人工, B16上期需求, B4加工成本, B17缺货率, B18报废率
-      engine2.raw.config.SetRules(
-        ['B14', 'B9', 'B16', 'B4', 'B17', 'B18'], 'B3', 'value', {
-        logic: ({ slot }: any) => {
-          const area = Number(slot.triggerTargets[0]?.value) || 80
-          const labor = Number(slot.triggerTargets[1]?.value) || 15000
-          const lastDemand = Number(slot.triggerTargets[2]?.value) || 1000
-          const cost = Number(slot.triggerTargets[3]?.value) || 2
-          const shortage = Number(slot.triggerTargets[4]?.value) || 0
-          const waste = Number(slot.triggerTargets[5]?.value) || 0
+      // —— B3 产能: 同权重共同预言 (每条纠缠独立计算, proposal.set 同权1) ——
+      // 每条纠缠各自用 GetValue 读取所有输入做全量计算
+      const computeB3Capacity = () => {
+        const rawArea = engine2.raw.data.GetValue('B14', 'value')
+        const rawLabor = engine2.raw.data.GetValue('B9', 'value')
+        const rawLastDemand = engine2.raw.data.GetValue('B16', 'value')
+        const rawCost = engine2.raw.data.GetValue('B4', 'value')
+        const rawShortage = engine2.raw.data.GetValue('B17', 'value')
+        const rawWaste = engine2.raw.data.GetValue('B18', 'value')
+        const area = (rawArea !== null && rawArea !== undefined) ? Number(rawArea) : 80
+        const labor = (rawLabor !== null && rawLabor !== undefined) ? Number(rawLabor) : 15000
+        const lastDemand = (rawLastDemand !== null && rawLastDemand !== undefined) ? Number(rawLastDemand) : 1000
+        const cost = (rawCost !== null && rawCost !== undefined) ? Number(rawCost) : 2
+        const shortage = (rawShortage !== null && rawShortage !== undefined) ? Number(rawShortage) : 0
+        const waste = (rawWaste !== null && rawWaste !== undefined) ? Number(rawWaste) : 0
+        if (area <= 0 || labor <= 0) return 0
+        const areaCap = Math.floor(area * 25)
+        const laborCap = Math.floor(labor / 5.0)
+        const hardwareCap = Math.min(areaCap, laborCap)
+        const confidence = Math.max(0.6, Math.min(1.4, 1.0 + shortage * 0.5 - waste * 0.5))
+        const demandPlan = Math.round(lastDemand * confidence)
+        const costBonus = Math.max(0, Math.round((2 - cost) * 200))
+        const base = Math.min(hardwareCap, demandPlan + costBonus)
+        const minOp = Math.round(hardwareCap * 0.3)
+        return Math.max(minOp, Math.max(0, base))
+      }
 
-          // ① 硬约束：面积×25  vs  人工÷5 → 短板效应
-          const areaCap = Math.floor(area * 25)
-          const laborCap = Math.floor(labor / 5.0)
-          const hardwareCap = Math.min(areaCap, laborCap)
-          if (hardwareCap <= 0) return 0
-
-          // ② 需求计划：上期销量 × 动态信心系数
-          const confidence = Math.max(0.6, Math.min(1.4, 1.0 + shortage * 0.5 - waste * 0.5))
-          const demandPlan = Math.round(lastDemand * confidence)
-
-          // ③ 效率红利：加工成本低 → 同资源下多产出
-          const costBonus = Math.max(0, Math.round((2 - cost) * 200))
-
-          // ④ 组合：最终产能 = min(硬件天花板, 需求计划 + 效率红利)
-          //    硬件天花板设下限：至少 30% 产能用来做试制/培训/展示
-          const baseProduction = Math.min(hardwareCap, demandPlan + costBonus)
-          const minOperation = Math.round(hardwareCap * 0.3)
-          return Math.max(minOperation, Math.max(0, baseProduction))
+      // B16上期需求→B3: 驱动月度备货计划
+      engine2.raw.config.useEntangle({
+        cause: 'B16', impact: 'B3', via: ['value'],
+        emit: (_src: any, _tgt: any, propose: any) => {
+          propose.set('value', computeB3Capacity(), 1)
         },
-        triggerKeys: ['value', 'value', 'value', 'value', 'value', 'value'],
-      } as any)
+      })
+      // B4加工成本→B3: 成本效率上浮产能
+      engine2.raw.config.useEntangle({
+        cause: 'B4', impact: 'B3', via: ['value'],
+        emit: (_src: any, _tgt: any, propose: any) => {
+          propose.set('value', computeB3Capacity(), 1)
+        },
+      })
+      // B9人工→B3: 人力变化影响天花板
+      engine2.raw.config.useEntangle({
+        cause: 'B9', impact: 'B3', via: ['value'],
+        emit: (_src: any, _tgt: any, propose: any) => {
+          propose.set('value', computeB3Capacity(), 1)
+        },
+      })
+      // B14面积→B3: 面积变化影响天花板
+      engine2.raw.config.useEntangle({
+        cause: 'B14', impact: 'B3', via: ['value'],
+        emit: (_src: any, _tgt: any, propose: any) => {
+          propose.set('value', computeB3Capacity(), 1)
+        },
+      })
+      // B17缺货率→B3: 缺货→信心系数调整
+      engine2.raw.config.useEntangle({
+        cause: 'B17', impact: 'B3', via: ['value'],
+        emit: (_src: any, _tgt: any, propose: any) => {
+          propose.set('value', computeB3Capacity(), 1)
+        },
+      })
+      // B18报废率→B3: 报废→信心系数调整
+      engine2.raw.config.useEntangle({
+        cause: 'B18', impact: 'B3', via: ['value'],
+        emit: (_src: any, _tgt: any, propose: any) => {
+          propose.set('value', computeB3Capacity(), 1)
+        },
+      })
 
       // B3→B4: 规模效应
       engine2.raw.config.SetRule('B3', 'B4', 'value', {

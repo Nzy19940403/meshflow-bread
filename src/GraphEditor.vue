@@ -37,6 +37,12 @@
         :nodes="nodes"
         :edges="edges"
         :fit-view-on-init="true"
+        :min-zoom="0.15"
+        :max-zoom="2.5"
+        :pan-on-drag="true"
+        :zoom-on-scroll="true"
+        :zoom-on-pinch="true"
+        fit-view-on-init-params="default"
         @node-click="onNodeClick"
         class="meshflow-graph"
       >
@@ -676,7 +682,7 @@ onUnmounted(() => { if (timer) clearInterval(timer) })
 <style scoped>
 .graph-editor {
   display: flex; flex-direction: column; height: 100%;
-  font-size: 12px;
+  font-size: 12px; touch-action: manipulation;
 }
 
 .graph-toolbar {
@@ -803,7 +809,7 @@ onUnmounted(() => { if (timer) clearInterval(timer) })
 .node-value-row {
   display: flex; align-items: center; justify-content: center;
   gap: 3px; cursor: pointer; padding: 2px 6px; border-radius: 4px;
-  transition: background 0.15s;
+  transition: background 0.15s; touch-action: manipulation;
 }
 .node-value-row:hover { background: #e8e8ed; }
 .node-value-num {
@@ -812,6 +818,11 @@ onUnmounted(() => { if (timer) clearInterval(timer) })
 }
 .edit-hint { font-size: 10px; color: #aeaeb2; opacity: 0; transition: opacity 0.15s; }
 .node-value-row:hover .edit-hint { opacity: 1; }
+/* 触摸设备编辑提示常显 */
+@media (hover: none) and (pointer: coarse) {
+  .edit-hint { opacity: 0.5; }
+  .node-value-row { min-height: 28px; }
+}
 
 .node-edit-row { padding: 1px 0; }
 .node-edit-input {
@@ -945,4 +956,42 @@ onUnmounted(() => { if (timer) clearInterval(timer) })
 .gs-name { font-size: 11px; font-weight: 600; color: #065f46; text-align: center; margin: 2px 0; }
 .gs-desc { font-size: 10px; color: #374151; line-height: 1.4; }
 .gs-tip { font-size: 10px; color: #d97706; line-height: 1.4; margin-top: 3px; }
+
+/* 📱 移动端响应式 */
+@media (max-width: 640px) {
+  .graph-toolbar {
+    flex-wrap: wrap; gap: 3px; padding: 4px 6px;
+  }
+  .graph-title { font-size: 11px; }
+  .graph-legend { gap: 4px; }
+  .legend-item { font-size: 9px; }
+  .legend-line { width: 12px; }
+
+  .sim-bar {
+    flex-wrap: wrap; gap: 4px 8px; padding: 3px 6px;
+    font-size: 11px;
+  }
+  .sim-month { font-size: 11px; }
+  .sim-month strong { font-size: 12px; }
+  .sim-profit, .sim-cumulative { font-size: 11px; }
+
+  .btn-sm { font-size: 10px !important; padding: 1px 5px !important; }
+
+  .graph-canvas { min-height: 200px; }
+
+  .gnt-row { grid-template-columns: 40px 70px 1fr 30px; font-size: 9px; }
+
+  .guide-strategy { flex-direction: column; }
+  .gs-card { min-width: auto; }
+
+  .guide-panel { max-height: 260px; }
+  .guide-scroll { max-height: 260px; padding: 6px 10px; }
+
+  .node-detail-panel { font-size: 10px; padding: 6px 8px; max-height: 140px; }
+}
+
+@media (max-width: 400px) {
+  .graph-legend { display: none; }
+  .graph-title { font-size: 10px; }
+}
 </style>

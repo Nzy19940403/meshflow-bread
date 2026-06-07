@@ -694,8 +694,11 @@ body {
   color: #1d1d1f;
   overflow: hidden;
   height: 100vh;
+  touch-action: manipulation;
+  -webkit-tap-highlight-color: transparent;
 }
 .app { max-width: 1200px; margin: 0 auto; padding: 8px 12px; height: 100vh; display: flex; flex-direction: column; }
+@media (max-width: 480px) { .app { padding: 4px 6px; } }
 
 .toolbar { display: flex; align-items: center; justify-content: space-between; margin-bottom: 4px; flex-shrink: 0; }
 .toolbar-left { display: flex; align-items: center; gap: 4px; flex-wrap: wrap; }

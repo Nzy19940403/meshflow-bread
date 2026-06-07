@@ -48,6 +48,8 @@
       >
         <Background :gap="20" />
         <template #node-custom="nodeProps">
+          <!-- 上端口：输入 (target) — 被别人影响 -->
+          <Handle type="target" :position="Position.Top" :style="{ background: '#0071e3', width: 8, height: 8, border: '2px solid #fff' }" />
           <div
             class="vue-flow__node-custom"
             :class="{
@@ -83,6 +85,8 @@
               <div v-if="nodeProps.data.role" class="node-role-badge">{{ nodeProps.data.role }}</div>
             </div>
           </div>
+          <!-- 下端口：输出 (source) — 影响别人 -->
+          <Handle type="source" :position="Position.Bottom" :style="{ background: '#059669', width: 8, height: 8, border: '2px solid #fff' }" />
         </template>
       </VueFlow>
     </div>
@@ -291,7 +295,7 @@
 
 <script setup lang="ts">
 import { ref, computed, nextTick, onMounted, onUnmounted } from 'vue'
-import { VueFlow } from '@vue-flow/core'
+import { VueFlow, Handle, Position } from '@vue-flow/core'
 import { Background } from '@vue-flow/background'
 import '@vue-flow/core/dist/style.css'
 import '@vue-flow/core/dist/theme-default.css'
@@ -376,6 +380,7 @@ const edges = ref([
   { id: 'sr-b3-b12', source: 'B3', target: 'B12', label: '产能', style: { stroke: srColor, strokeWidth: 2 } },
   { id: 'sr-b1-b6', source: 'B1', target: 'B6', label: '售价', style: { stroke: srColor, strokeWidth: 2 } },
   { id: 'sr-b2-b6', source: 'B2', target: 'B6', label: '销量', style: { stroke: srColor, strokeWidth: 2 } },
+  { id: 'sr-b3-b6', source: 'B3', target: 'B6', label: '产能', style: { stroke: srColor, strokeWidth: 2 } },
   { id: 'sr-b12-b7', source: 'B12', target: 'B7', label: '生产成本', style: { stroke: srColor, strokeWidth: 2 } },
   { id: 'sr-b5-b7', source: 'B5', target: 'B7', label: '房租', style: { stroke: srColor, strokeWidth: 2 } },
   { id: 'sr-b9-b7', source: 'B9', target: 'B7', label: '人工', style: { stroke: srColor, strokeWidth: 2 } },
@@ -572,7 +577,7 @@ const PROPAGATION_STEPS: { nodes: string[]; edges: string[]; msg: string }[] = [
   { nodes: ['B4'], edges: ['sr-b3-b4'], msg: '⑤ SetRule: 规模效应 产高→加工成本低(下限0.1,斜率×2)' },
   { nodes: ['B3'], edges: ['ent-b4-b3'], msg: '⑥ 纠缠 B4→B3(权7): 低成本→效率提升' },
   { nodes: ['B12'], edges: ['sr-b10-b12', 'sr-b11-b12', 'sr-b4-b12', 'sr-b3-b12'], msg: '⑦ 供应链→生产成本' },
-  { nodes: ['B6'], edges: ['sr-b1-b6', 'sr-b2-b6'], msg: '⑧ 收入=售价×实际销售(产能限制)' },
+  { nodes: ['B6'], edges: ['sr-b1-b6', 'sr-b2-b6', 'sr-b3-b6'], msg: '⑧ 收入=售价×实际销售(产能限制)' },
   { nodes: ['B7'], edges: ['sr-b12-b7', 'sr-b5-b7', 'sr-b9-b7', 'sr-b13-b7'], msg: '⑨ 总成本=生产+房租+人工+营销' },
   { nodes: ['B8'], edges: ['sr-b6-b8', 'sr-b7-b8'], msg: '⑩ 利润=收入-总成本' },
 ]

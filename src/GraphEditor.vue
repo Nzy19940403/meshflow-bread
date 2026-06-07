@@ -312,6 +312,7 @@ const nodeIcons: Record<string, string> = {
   B6: '📈', B7: '📉', B8: '✅', B9: '👷',
   B10: '🥖', B11: '📦', B12: '🏗️', B13: '📢', B14: '📐', B15: '⭐',
   B16: '📜', B17: '⚠️', B18: '📦',
+  B19: '🌟', B20: '😋', B21: '😊',
 }
 
 function formatVal(v: any): string {
@@ -331,19 +332,22 @@ const nodes = ref([
   { id: 'B9', type: 'custom', position: { x: 50, y: 540 }, data: { label: '人工成本', value: readValue('B9'), role: '可编辑' } },
   { id: 'B13', type: 'custom', position: { x: 50, y: 660 }, data: { label: '营销投入', value: readValue('B13'), role: '可编辑' } },
 
-  // ============ 🍞 运营中枢 (x=330) — 业务逻辑计算 ============
+  // ============ 🍞 运营 (x=330) — 业务逻辑 ============
   { id: 'B5', type: 'custom', position: { x: 330, y: 60 }, data: { label: '房租🏗️', value: readValue('B5'), role: '=面积×等级×折扣' } },
-  { id: 'B4', type: 'custom', position: { x: 330, y: 190 }, data: { label: '加工成本', value: readValue('B4'), role: '规模效应' } },
-  { id: 'B3', type: 'custom', position: { x: 330, y: 330 }, data: { label: '产能 ⚡', value: readValue('B3'), role: '冲突点' } },
-  { id: 'B1', type: 'custom', position: { x: 330, y: 490 }, data: { label: '售价', value: readValue('B1'), role: '可编辑' } },
+  { id: 'B21', type: 'custom', position: { x: 330, y: 180 }, data: { label: '员工满意度😊', value: readValue('B21'), role: '薪酬vs负荷' } },
+  { id: 'B4', type: 'custom', position: { x: 330, y: 300 }, data: { label: '加工成本', value: readValue('B4'), role: '规模效应' } },
+  { id: 'B20', type: 'custom', position: { x: 330, y: 420 }, data: { label: '口味/品质😋', value: readValue('B20'), role: '满意度→品质' } },
+  { id: 'B3', type: 'custom', position: { x: 330, y: 540 }, data: { label: '产能 ⚡', value: readValue('B3'), role: '冲突点' } },
+  { id: 'B1', type: 'custom', position: { x: 330, y: 660 }, data: { label: '售价', value: readValue('B1'), role: '可编辑' } },
 
-  // ============ 📊 市场反馈 (x=610) — 需求+缓存 ============
-  { id: 'B2', type: 'custom', position: { x: 610, y: 80 }, data: { label: '需求 ⚡', value: readValue('B2'), role: '冲突点' } },
-  { id: 'B16', type: 'custom', position: { x: 610, y: 220 }, data: { label: '上期需求📜', value: readValue('B16'), role: '缓存' } },
-  { id: 'B17', type: 'custom', position: { x: 610, y: 350 }, data: { label: '上期缺货率⚠️', value: readValue('B17'), role: '缓存' } },
-  { id: 'B18', type: 'custom', position: { x: 610, y: 480 }, data: { label: '上期报废率📦', value: readValue('B18'), role: '缓存' } },
+  // ============ 📊 市场 (x=610) — 需求+品牌+缓存 ============
+  { id: 'B2', type: 'custom', position: { x: 610, y: 60 }, data: { label: '需求 ⚡', value: readValue('B2'), role: '流量×留存率' } },
+  { id: 'B19', type: 'custom', position: { x: 610, y: 200 }, data: { label: '知名度🌟', value: readValue('B19'), role: '积累中' } },
+  { id: 'B16', type: 'custom', position: { x: 610, y: 340 }, data: { label: '上期需求📜', value: readValue('B16'), role: '缓存' } },
+  { id: 'B17', type: 'custom', position: { x: 610, y: 470 }, data: { label: '上期缺货率⚠️', value: readValue('B17'), role: '缓存' } },
+  { id: 'B18', type: 'custom', position: { x: 610, y: 600 }, data: { label: '上期报废率📦', value: readValue('B18'), role: '缓存' } },
 
-  // ============ 💰 财务结果 (x=850) — 最终输出 ============
+  // ============ 💰 财务 (x=850) — 结果 ============
   { id: 'B12', type: 'custom', position: { x: 850, y: 80 }, data: { label: '总生产成本', value: readValue('B12'), role: '=(B10+B11+B4)×B3' } },
   { id: 'B6', type: 'custom', position: { x: 850, y: 220 }, data: { label: '月收入', value: readValue('B6'), role: '=B1×MIN(B2,B3)' } },
   { id: 'B7', type: 'custom', position: { x: 850, y: 360 }, data: { label: '总成本', value: readValue('B7'), role: '=B12+B5+B9+B13' } },
@@ -390,6 +394,24 @@ const edges = ref([
   { id: 'sr-b13-b7', source: 'B13', target: 'B7', label: '营销', style: { stroke: srColor, strokeWidth: 2 } },
   { id: 'sr-b6-b8', source: 'B6', target: 'B8', label: '收入', style: { stroke: srColor, strokeWidth: 2 } },
   { id: 'sr-b7-b8', source: 'B7', target: 'B8', label: '成本', style: { stroke: srColor, strokeWidth: 2 } },
+
+  // — 品质&品牌链路: 人工→满意度→口味→知名度→需求 —
+  { id: 'sr-b9-b21', source: 'B9', target: 'B21', label: '薪酬',
+    style: { stroke: srColor, strokeWidth: 2 }, labelStyle: { fill: srColor, fontSize: 9 } },
+  { id: 'sr-b3-b21', source: 'B3', target: 'B21', label: '负荷',
+    style: { stroke: srColor, strokeWidth: 2, strokeDasharray: '4 2' }, labelStyle: { fill: srColor, fontSize: 9 } },
+  { id: 'sr-b14-b21', source: 'B14', target: 'B21', label: '空间上限',
+    style: { stroke: srColor, strokeWidth: 2, strokeDasharray: '4 2' }, labelStyle: { fill: srColor, fontSize: 9 } },
+  { id: 'sr-b21-b20', source: 'B21', target: 'B20', label: '满意度→品质',
+    style: { stroke: srColor, strokeWidth: 2 }, labelStyle: { fill: srColor, fontSize: 9 } },
+  { id: 'sr-b3-b20', source: 'B3', target: 'B20', label: '超负荷',
+    style: { stroke: srColor, strokeWidth: 2, strokeDasharray: '4 2' }, labelStyle: { fill: srColor, fontSize: 9 } },
+  { id: 'sr-b14-b20', source: 'B14', target: 'B20', label: '产能上限',
+    style: { stroke: srColor, strokeWidth: 2, strokeDasharray: '4 2' }, labelStyle: { fill: srColor, fontSize: 9 } },
+  { id: 'sr-b20-b19', source: 'B20', target: 'B19', label: '口碑积累',
+    style: { stroke: srColor, strokeWidth: 2 }, labelStyle: { fill: srColor, fontSize: 9 }, animated: true },
+  { id: 'sr-b19-b2', source: 'B19', target: 'B2', label: '品牌溢价',
+    style: { stroke: srColor, strokeWidth: 2 }, labelStyle: { fill: srColor, fontSize: 9 }, animated: true },
 
   // — 滞后纠缠: 上期需求→产能计划 + 成本红利 + 缺货惩罚 —
   { id: 'ent-b16-b3', source: 'B16', target: 'B3', label: '📜上期→产 权10',
@@ -545,6 +567,16 @@ function advanceMonth() {
   // 计算报废率（产能过剩比例）
   const waste = (cap > demand && cap > 0) ? Math.round((cap - demand) / cap * 1000) / 1000 : 0
   props.engine.setCellValue('B18', String(waste))
+  // 品牌积累: 口味×流量→知名度增长, 每月5%自然衰减
+  const taste = Number(readValue('B20')) || 0
+  const grade = Number(readValue('B15')) || 5
+  const mkt = Number(readValue('B13')) || 0
+  const oldBrand = Number(readValue('B19')) || 0
+  const traffic = grade * 200 + Math.sqrt(Math.max(0, mkt)) * 15
+  const growth = Math.round(taste * traffic / 100)
+  const decay = Math.round(oldBrand * 0.05)
+  const newBrand = Math.max(0, oldBrand + growth - decay)
+  props.engine.setCellValue('B19', String(newBrand))
   triggerPropagation()
   setTimeout(() => refreshAllValues(), 300)
 
@@ -623,7 +655,7 @@ function triggerPropagation() {
   setTimeout(() => {
     if (propagationGen.value !== gen) return
     // 标记最后收敛的节点为"变化"
-    const finalIds = ['B1','B2','B3','B4','B5','B6','B7','B8','B16','B17','B18']
+    const finalIds = ['B1','B2','B3','B4','B5','B6','B7','B8','B16','B17','B18','B19','B20','B21']
     changedNodes.value = new Set(finalIds)
     // 1.5秒后清除高亮
     setTimeout(() => {
@@ -671,7 +703,7 @@ function wasChanged(id: string): boolean {
 
 // 刷新所有节点的值
 function refreshAllValues() {
-  const ids = ['B1', 'B2', 'B3', 'B4', 'B5', 'B6', 'B7', 'B8', 'B9', 'B10', 'B11', 'B12', 'B13', 'B14', 'B15', 'B16', 'B17', 'B18']
+  const ids = ['B1', 'B2', 'B3', 'B4', 'B5', 'B6', 'B7', 'B8', 'B9', 'B10', 'B11', 'B12', 'B13', 'B14', 'B15', 'B16', 'B17', 'B18', 'B19', 'B20', 'B21']
   for (const id of ids) {
     const node = nodes.value.find(n => n.id === id)
     if (node) node.data.value = readValue(id)

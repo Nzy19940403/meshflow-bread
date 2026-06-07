@@ -406,26 +406,41 @@ onMounted(() => {
         triggerKeys: ['value', 'value'],
       } as any)
 
-      // 需求基线 (B1价格+B15等级+B13营销, B17缺货惩罚)
+      // —— 需求 B2 = 流量 × 留存率 (品牌知名度决定价格容忍度) ——
       engine2.raw.config.SetRules(
-        ['B1', 'B15', 'B13', 'B17'], 'B2', 'value', {
+        ['B1', 'B15', 'B13', 'B17', 'B19'], 'B2', 'value', {
         logic: ({ slot }: any) => {
           const price = slot.triggerTargets[0]?.value
           const grade = slot.triggerTargets[1]?.value
           const marketing = slot.triggerTargets[2]?.value
           const shortage = slot.triggerTargets[3]?.value
+          const brand = slot.triggerTargets[4]?.value
           const p = (price !== null && price !== undefined) ? Number(price) : 12
           const g = (grade !== null && grade !== undefined) ? Number(grade) : 5
           const m = (marketing !== null && marketing !== undefined) ? Number(marketing) : 0
           const s = (shortage !== null && shortage !== undefined) ? Number(shortage) : 0
-          const priceEffect = Math.max(300, 5000 - p * 200)
-          const locationEffect = g * 200
-          const marketingEffect = Math.sqrt(Math.max(0, m)) * 15
-          const base = priceEffect + locationEffect + marketingEffect
+          const b = (brand !== null && brand !== undefined) ? Number(brand) : 0
+
+          // 流量 = 地段 + 营销
+          const traffic = g * 200 + Math.sqrt(Math.max(0, m)) * 15
+
+          // 品牌溢价: 每点知名度 +¥0.5 价格容忍度
+          const brandPremium = b * 0.5
+          const maxAcceptable = 10 + brandPremium
+
+          // 留存率: 价格 vs 品牌溢价能力
+          let retention: number
+          if (p <= maxAcceptable) {
+            retention = 0.5 + (maxAcceptable - p) / maxAcceptable * 0.4
+          } else {
+            retention = Math.max(0.05, 0.5 * (maxAcceptable / p))
+          }
+
+          const base = Math.round(traffic * retention)
           const penalty = Math.round(base * s * 0.5)
-          return Math.round(base - penalty)
+          return Math.max(0, base - penalty)
         },
-        triggerKeys: ['value', 'value', 'value', 'value'],
+        triggerKeys: ['value', 'value', 'value', 'value', 'value'],
       } as any)
 
       // B16上期需求→B3产能 (动态备货系数)
@@ -514,6 +529,64 @@ onMounted(() => {
         },
       })
 
+      // —— B21 员工满意度: 薪酬 vs 工作负荷 ——
+      engine2.raw.config.SetRules(
+        ['B9', 'B3', 'B14'], 'B21', 'value', {
+        logic: ({ slot }: any) => {
+          const rawLabor = slot.triggerTargets[0]?.value
+          const rawCap = slot.triggerTargets[1]?.value
+          const rawArea = slot.triggerTargets[2]?.value
+          const labor = (rawLabor !== null && rawLabor !== undefined) ? Number(rawLabor) : 15000
+          const cap = (rawCap !== null && rawCap !== undefined) ? Number(rawCap) : 1000
+          const area = (rawArea !== null && rawArea !== undefined) ? Number(rawArea) : 80
+
+          const payPerOutput = labor / Math.max(cap, 1)
+          const utilization = cap / Math.max(area * 25, 1)
+
+          // 薪酬满意度: 每单位产能人工成本 >= 5 → 满意
+          let paySat: number
+          if (payPerOutput >= 5) {
+            paySat = 0.7 + Math.min((payPerOutput - 5) / 10, 0.3)
+          } else {
+            paySat = payPerOutput / 5 * 0.7
+          }
+
+          // 过劳惩罚: 利用率超80%开始扣
+          const overworkPenalty = Math.max(0, utilization - 0.8) * 1.5
+
+          return Math.round(Math.min(1, Math.max(0, paySat - overworkPenalty)) * 1000) / 1000
+        },
+        triggerKeys: ['value', 'value', 'value'],
+      } as any)
+
+      // —— B20 口味/品质: 满意度高→好面包, 满意度低→糟蹋原料 ——
+      engine2.raw.config.SetRules(
+        ['B21', 'B3', 'B14'], 'B20', 'value', {
+        logic: ({ slot }: any) => {
+          const rawSat = slot.triggerTargets[0]?.value
+          const rawCap = slot.triggerTargets[1]?.value
+          const rawArea = slot.triggerTargets[2]?.value
+          const sat = (rawSat !== null && rawSat !== undefined) ? Number(rawSat) : 0.8
+          const cap = (rawCap !== null && rawCap !== undefined) ? Number(rawCap) : 1000
+          const area = (rawArea !== null && rawArea !== undefined) ? Number(rawArea) : 80
+
+          const utilization = cap / Math.max(area * 25, 1)
+
+          let taste: number
+          if (sat >= 0.6) {
+            // 满意员工→好面包, 超负荷略降
+            const overload = Math.max(0, utilization - 0.9) * 0.5
+            taste = Math.min(1, Math.max(0.3, 1.0 - overload))
+          } else {
+            // 不满意→糟蹋原料
+            taste = sat * 0.6
+          }
+
+          return Math.round(taste * 1000) / 1000
+        },
+        triggerKeys: ['value', 'value', 'value'],
+      } as any)
+
       entangleReady = true
     }
     engine2.raw.data.SilentSet('B1', 'value', 12)
@@ -536,6 +609,12 @@ onMounted(() => {
     engine2.raw.data.SilentSet('B17', 'formula', '')
     engine2.raw.data.SilentSet('B18', 'value', 0)
     engine2.raw.data.SilentSet('B18', 'formula', '')
+    engine2.raw.data.SilentSet('B19', 'value', 0)
+    engine2.raw.data.SilentSet('B19', 'formula', '')
+    engine2.raw.data.SilentSet('B20', 'value', 0.8)
+    engine2.raw.data.SilentSet('B20', 'formula', '')
+    engine2.raw.data.SilentSet('B21', 'value', 0.8)
+    engine2.raw.data.SilentSet('B21', 'formula', '')
 
     engine.setCellValue('A1', '💰 售价(元)')
     engine.setCellValue('A2', '📊 月需求(个)')
@@ -551,6 +630,9 @@ onMounted(() => {
     engine.setCellValue('A16', '📜 上期需求')
     engine.setCellValue('A17', '⚠️ 上期缺货率')
     engine.setCellValue('A18', '📦 上期报废率')
+    engine.setCellValue('A19', '🌟 知名度(品牌)')
+    engine.setCellValue('A20', '😋 口味/品质')
+    engine.setCellValue('A21', '😊 员工满意度')
 
     engine.setCellFormula('B6', '=B1*MIN(B2,B3)')
     engine.setCellFormula('B12', '=(B10+B11+B4)*B3')

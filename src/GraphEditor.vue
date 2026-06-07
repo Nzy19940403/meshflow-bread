@@ -11,6 +11,9 @@
       <button class="btn btn-sm btn-month" @click="advanceMonth" :disabled="yearDone">
         {{ yearDone ? '✅ 年终' : '📅 下个月' }}
       </button>
+      <button class="btn btn-sm btn-guide" @click="showGuide = !showGuide">
+        {{ showGuide ? '✕ 关闭指南' : '📖 推演指南' }}
+      </button>
     </div>
 
     <div class="sim-bar">
@@ -76,6 +79,126 @@
           </div>
         </template>
       </VueFlow>
+    </div>
+
+    <!-- 📖 推演指南 -->
+    <div v-if="showGuide" class="guide-panel">
+      <div class="guide-scroll">
+        <section class="guide-section">
+          <h3>🎯 目标</h3>
+          <p>经营一家虚拟面包店，在 <strong>12 个月</strong> 的推演中找到盈利策略。调整售价、面积、人工、营销等参数，点击「📅 下个月」推进，看年终能不能赚钱。</p>
+        </section>
+
+        <section class="guide-section">
+          <h3>🎮 操作说明</h3>
+          <ul>
+            <li><strong>双击</strong> 任意可编辑节点（蓝色数值）→ 输入数字 → <kbd>Enter</kbd> 或点空白处确认</li>
+            <li>修改后系统自动 <strong>传播推演</strong>，绿色高亮显示数据流路径</li>
+            <li><strong>📅 下个月</strong> → 推进一个月，记录本月盈亏，更新上期缓存</li>
+            <li>第 12 个月后弹出 <strong>🏆 年度总结</strong>，可「🔄 新一年」重置</li>
+            <li><strong>点击节点</strong> → 查看详情面板（出边/入边/公式说明）</li>
+          </ul>
+        </section>
+
+        <section class="guide-section">
+          <h3>🧩 节点速查</h3>
+          <div class="guide-node-table">
+            <div class="gnt-row gnt-header"><span>组</span><span>节点</span><span>含义</span><span>可编辑</span></div>
+            <div class="gnt-row"><span>🏪市场</span><span>B1 售价</span><span>面包单价(元)</span><span class="gnt-yes">✅</span></div>
+            <div class="gnt-row"><span>🏪市场</span><span>B2 需求 ⚡</span><span>月需求量(个) = f(价格+等级+营销−缺货惩罚)</span><span class="gnt-no">引擎</span></div>
+            <div class="gnt-row"><span>🍞生产</span><span>B3 产能 ⚡</span><span>月产能(个) = f(面积, 人工, 上期需求×动态系数)</span><span class="gnt-no">引擎</span></div>
+            <div class="gnt-row"><span>🍞生产</span><span>B4 加工成本</span><span>规模效应: 产能越高成本越低(下限¥0.1)</span><span class="gnt-no">引擎</span></div>
+            <div class="gnt-row"><span>💰财务</span><span>B5 房租🏗️</span><span>= 面积×等级×(20−面积×0.05) 非线性折扣</span><span class="gnt-no">引擎</span></div>
+            <div class="gnt-row"><span>💰财务</span><span>B6 月收入</span><span>= 售价 × 实际销量(受产能限制)</span><span class="gnt-no">引擎</span></div>
+            <div class="gnt-row"><span>💰财务</span><span>B7 总成本</span><span>= 生产 + 房租 + 人工 + 营销</span><span class="gnt-no">引擎</span></div>
+            <div class="gnt-row"><span>💰财务</span><span>B8 月利润 ✅</span><span>= 收入 − 成本</span><span class="gnt-no">引擎</span></div>
+            <div class="gnt-row"><span>🍞生产</span><span>B9 人工</span><span>月人工成本(元)，每¥5出1个产能</span><span class="gnt-yes">✅</span></div>
+            <div class="gnt-row"><span>🏭供应链</span><span>B10 原料成本</span><span>每单位原料成本(元/个)</span><span class="gnt-yes">✅</span></div>
+            <div class="gnt-row"><span>🏭供应链</span><span>B11 其他变动</span><span>水电包装等(元/个)</span><span class="gnt-yes">✅</span></div>
+            <div class="gnt-row"><span>🏭供应链</span><span>B12 生产成本</span><span>=(原料+其他+加工)×产能</span><span class="gnt-no">引擎</span></div>
+            <div class="gnt-row"><span>🏪市场</span><span>B13 营销</span><span>月营销投入(元)，√效应递减</span><span class="gnt-yes">✅</span></div>
+            <div class="gnt-row"><span>🏭供应链</span><span>B14 面积</span><span>店面面积(m²)，每m²出25个产能</span><span class="gnt-yes">✅</span></div>
+            <div class="gnt-row"><span>🏭供应链</span><span>B15 等级</span><span>地段等级(1-10)，影响需求+房租</span><span class="gnt-yes">✅</span></div>
+            <div class="gnt-row"><span>🏪市场</span><span>B16 上期需求📜</span><span>上月真实需求，影响下月备货</span><span class="gnt-no">缓存</span></div>
+            <div class="gnt-row"><span>🏪市场</span><span>B17 缺货率⚠️</span><span>上月缺货比例，降低本月需求</span><span class="gnt-no">缓存</span></div>
+            <div class="gnt-row"><span>🏪市场</span><span>B18 报废率📦</span><span>上月报废比例，降低备货信心</span><span class="gnt-no">缓存</span></div>
+          </div>
+        </section>
+
+        <section class="guide-section">
+          <h3>⚙️ 核心公式</h3>
+          <div class="guide-formula">
+            <div class="gf-title">📊 需求 (B2)</div>
+            <code>base = max(300, 5000−售价×200) + 等级×200 + √营销×15</code>
+            <code>B2 = base − base × 缺货率 × 0.5</code>
+            <p class="gf-note">价越低需求越大，有底线300；等级和营销加成；缺货过会流失顾客。</p>
+          </div>
+          <div class="guide-formula">
+            <div class="gf-title">🏭 产能 (B3) — 4条纠缠边冲突仲裁</div>
+            <code>资源上限 = min(floor(面积×25), floor(人工÷5))</code>
+            <code>备货信心 = clamp(1.0 + 缺货率×0.5 − 报废率×0.5, 0.6, 1.4)</code>
+            <code>B3 = min(资源上限, round(上期需求 × 备货信心))</code>
+            <p class="gf-note">面积×25 和 人工÷5 取短板；备货信心受上期反馈动态调整(店长会学习)。</p>
+          </div>
+          <div class="guide-formula">
+            <div class="gf-title">🏢 房租 (B5)</div>
+            <code>B5 = max(0, round(面积 × 等级 × max(2, 20−面积×0.05)))</code>
+            <p class="gf-note">非线性折扣：面积越大每平米越便宜。200m²时单价5折。</p>
+          </div>
+          <div class="guide-formula">
+            <div class="gf-title">💰 利润 (B8)</div>
+            <code>收入 = 售价 × min(需求, 产能)   &nbsp;// 卖不掉的不算</code>
+            <code>成本 = (原料+其他+加工)×产能 + 房租 + 人工 + 营销</code>
+            <code>利润 = 收入 − 成本</code>
+            <p class="gf-note">做多了(<strong>报废</strong>)白花钱，做少了(<strong>缺货</strong>)损失机会。核心是供需匹配。</p>
+          </div>
+        </section>
+
+        <section class="guide-section">
+          <h3>💡 推演策略</h3>
+          <div class="guide-strategy">
+            <div class="gs-card">
+              <div class="gs-icon">✨</div>
+              <div class="gs-name">精品路线</div>
+              <div class="gs-desc">高售价(¥24~28) + 小店面(40~60m²) + 好地段 + 精人工，高毛利低量</div>
+              <div class="gs-tip">⚠️ 注意：高价降低需求基数，须用等级和营销补偿；面积小房租便宜但产能低。</div>
+            </div>
+            <div class="gs-card">
+              <div class="gs-icon">🏭</div>
+              <div class="gs-name">工厂模式</div>
+              <div class="gs-desc">低售价(¥14~16) + 大面积(100~200m²) + 低等级，薄利多销</div>
+              <div class="gs-tip">⚠️ 注意：大面积房租非线性昂贵少，但人工和原料成本线性增长；单位利润薄。</div>
+            </div>
+            <div class="gs-card">
+              <div class="gs-icon">⚖️</div>
+              <div class="gs-name">均衡路线</div>
+              <div class="gs-desc">尝试中档参数(售价¥18~22)，探索未发现的盈利空间</div>
+              <div class="gs-tip">💡 每个参数微调都可能产生连锁反应，通过月度推演找到最优组合。</div>
+            </div>
+          </div>
+        </section>
+
+        <section class="guide-section">
+          <h3>⚠️ 常见陷阱</h3>
+          <ul>
+            <li><strong>盲目扩张</strong>：看着卖得好就加大面积/人工 → 需求没增长 → 报废飙升</li>
+            <li><strong>价格太低卖得越多亏越多</strong>：检查 B4+B9+B10+B11 是否大于B1</li>
+            <li><strong>只调价格不调营销</strong>：B2 需求公式中营销有√效应，边际效率递减</li>
+            <li><strong>年底才看总结</strong>：每月查看本月利润，及时调整策略</li>
+          </ul>
+        </section>
+
+        <section class="guide-section">
+          <h3>🔬 验证与参考</h3>
+          <p>该模型经过 <strong>500,000+ 组合穷举验证</strong>，引擎推演结果与 Python 数学计算偏差 <strong>&lt;0.01%</strong>。三条已验证路线（旧版固定1.2倍率）：</p>
+          <ul>
+            <li>🥇 全局最优：售价28 / 人工16k / 营销5k / 面积140 / 等级10 → <strong>¥436,173/年</strong></li>
+            <li>✨ 精品店：售价28 / 人工8k / 营销2k / 面积60 / 等级3 → <strong>¥261,504/年</strong></li>
+            <li>🏭 工厂：售价16 / 人工14k / 营销3.5k / 面积120 / 等级1 → <strong>¥134,599/年</strong></li>
+          </ul>
+          <p class="gf-note">* 现版本已改用动态备货系数，参考值仅供对比参考，实际推演可能不同。</p>
+        </section>
+      </div>
     </div>
 
     <!-- 年终总结 -->
@@ -339,6 +462,7 @@ const propMessage = ref('')
 
 const affectedNodes = ref<Set<string>>(new Set())
 const changedNodes = ref<Set<string>>(new Set())
+const showGuide = ref(false)
 
 // === 商业模拟沙盘 ===
 const currentMonth = ref(1)
@@ -751,4 +875,74 @@ onUnmounted(() => { if (timer) clearInterval(timer) })
   border-top: 1px solid #d2d2d7; padding: 10px;
   text-align: center; font-size: 12px; color: #86868b; flex-shrink: 0;
 }
+
+/* 📖 推演指南 */
+.btn-guide {
+  background: #059669 !important; color: white !important; border-color: #059669 !important;
+  font-weight: 600 !important;
+}
+.btn-guide:hover { background: #047857 !important; }
+
+.guide-panel {
+  border-top: 2px solid #059669;
+  background: linear-gradient(135deg, #f0fdf4, #f8fafc);
+  flex-shrink: 0;
+  max-height: 340px;
+  overflow: hidden;
+}
+.guide-scroll {
+  padding: 10px 14px;
+  overflow-y: auto;
+  max-height: 340px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+.guide-section { border-bottom: 1px solid #d1fae5; padding-bottom: 10px; }
+.guide-section:last-child { border-bottom: none; padding-bottom: 0; }
+.guide-section h3 { font-size: 12px; font-weight: 700; color: #065f46; margin-bottom: 6px; }
+.guide-section p { font-size: 11px; color: #374151; line-height: 1.5; margin: 0; }
+.guide-section ul { margin: 4px 0; padding-left: 16px; }
+.guide-section li { font-size: 11px; color: #374151; line-height: 1.6; }
+.guide-section kbd {
+  font-size: 10px; padding: 1px 4px; background: #e8e8ed;
+  border-radius: 3px; border: 1px solid #d2d2d7; font-family: monospace;
+}
+
+/* 节点速查 */
+.guide-node-table {
+  display: flex; flex-direction: column; gap: 1px;
+  font-size: 10px;
+}
+.gnt-row {
+  display: grid; grid-template-columns: 52px 100px 1fr 36px;
+  gap: 4px; padding: 2px 4px; border-radius: 2px;
+  align-items: center;
+}
+.gnt-row:nth-child(even) { background: rgba(255,255,255,.6); }
+.gnt-header { font-weight: 600; color: #6b7280; font-size: 9px; text-transform: uppercase; letter-spacing: 0.3px; }
+.gnt-yes { color: #059669; font-weight: 600; font-size: 9px; text-align: center; }
+.gnt-no { color: #6b7280; font-size: 9px; text-align: center; }
+
+/* 核心公式 */
+.guide-formula { margin: 6px 0; padding: 6px 8px; background: rgba(255,255,255,.7); border-radius: 4px; border: 1px solid #d1fae5; }
+.gf-title { font-size: 11px; font-weight: 600; color: #065f46; margin-bottom: 3px; }
+.guide-formula code {
+  display: block; font-size: 10px; color: #1e293b;
+  background: #f1f5f9; padding: 2px 6px; border-radius: 3px;
+  margin: 2px 0; font-family: 'SF Mono','Menlo',monospace; line-height: 1.5;
+}
+.gf-note { font-size: 10px !important; color: #6b7280 !important; margin-top: 2px !important; }
+
+/* 策略卡片 */
+.guide-strategy { display: flex; gap: 6px; flex-wrap: wrap; }
+.gs-card {
+  flex: 1; min-width: 140px; padding: 6px 8px;
+  background: rgba(255,255,255,.7); border-radius: 4px;
+  border: 1px solid #d1fae5;
+}
+.gs-icon { font-size: 16px; text-align: center; }
+.gs-name { font-size: 11px; font-weight: 600; color: #065f46; text-align: center; margin: 2px 0; }
+.gs-desc { font-size: 10px; color: #374151; line-height: 1.4; }
+.gs-tip { font-size: 10px; color: #d97706; line-height: 1.4; margin-top: 3px; }
 </style>

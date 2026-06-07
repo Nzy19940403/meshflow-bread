@@ -8,7 +8,7 @@ interface CellState {
   formula: string
 }
 
-let ROWS = 20
+let ROWS = 25
 let COLS = 10
 const MAX_COLS = 26
 const MAX_ROWS = 99

@@ -323,28 +323,31 @@ function formatVal(v: any): string {
 
 // === 节点数据 ===
 const nodes = ref([
-  // 🏭 供应链
-  { id: 'B10', type: 'custom', position: { x: 50, y: 80 }, data: { label: '原料成本', value: readValue('B10'), role: '可编辑' } },
-  { id: 'B11', type: 'custom', position: { x: 50, y: 200 }, data: { label: '其他变动成本', value: readValue('B11'), role: '可编辑' } },
-  { id: 'B14', type: 'custom', position: { x: 50, y: 320 }, data: { label: '店面面积', value: readValue('B14'), role: '可编辑(m²)' } },
-  // 🍞 生产
-  { id: 'B3', type: 'custom', position: { x: 400, y: 80 }, data: { label: '产能 ⚡', value: readValue('B3'), role: '冲突点' } },
-  { id: 'B4', type: 'custom', position: { x: 400, y: 200 }, data: { label: '加工成本', value: readValue('B4'), role: '规模效应' } },
-  { id: 'B9', type: 'custom', position: { x: 400, y: 320 }, data: { label: '人工成本', value: readValue('B9'), role: '可编辑' } },
-  { id: 'B12', type: 'custom', position: { x: 400, y: 440 }, data: { label: '总生产成本', value: readValue('B12'), role: '=(B10+B11+B4)×B3' } },
-  // 🏪 市场
-  { id: 'B1', type: 'custom', position: { x: 750, y: 80 }, data: { label: '售价', value: readValue('B1'), role: '可编辑' } },
-  { id: 'B2', type: 'custom', position: { x: 750, y: 200 }, data: { label: '需求 ⚡', value: readValue('B2'), role: '冲突点' } },
-  { id: 'B13', type: 'custom', position: { x: 750, y: 320 }, data: { label: '营销投入', value: readValue('B13'), role: '可编辑' } },
-  { id: 'B15', type: 'custom', position: { x: 750, y: 440 }, data: { label: '场地等级', value: readValue('B15'), role: '可编辑(1-10)' } },
-  { id: 'B16', type: 'custom', position: { x: 930, y: 80 }, data: { label: '上期需求📜', value: readValue('B16'), role: '缓存' } },
-  { id: 'B17', type: 'custom', position: { x: 930, y: 200 }, data: { label: '上期缺货率⚠️', value: readValue('B17'), role: '缓存' } },
-  { id: 'B18', type: 'custom', position: { x: 930, y: 320 }, data: { label: '上期报废率📦', value: readValue('B18'), role: '缓存' } },
-  // 💰 财务
-  { id: 'B5', type: 'custom', position: { x: 280, y: 540 }, data: { label: '房租🏗️', value: readValue('B5'), role: '=面积×等级×20' } },
-  { id: 'B6', type: 'custom', position: { x: 460, y: 540 }, data: { label: '月收入', value: readValue('B6'), role: '=B1×MIN(B2,B3)' } },
-  { id: 'B7', type: 'custom', position: { x: 640, y: 540 }, data: { label: '总成本', value: readValue('B7'), role: '=B12+B5+B9+B13' } },
-  { id: 'B8', type: 'custom', position: { x: 820, y: 540 }, data: { label: '月利润', value: readValue('B8'), role: '=B6-B7' } },
+  // ============ 🏭 供应链 (x=50) — 输入决策 ============
+  { id: 'B10', type: 'custom', position: { x: 50, y: 60 }, data: { label: '原料成本', value: readValue('B10'), role: '可编辑' } },
+  { id: 'B11', type: 'custom', position: { x: 50, y: 180 }, data: { label: '其他变动成本', value: readValue('B11'), role: '可编辑' } },
+  { id: 'B14', type: 'custom', position: { x: 50, y: 300 }, data: { label: '店面面积', value: readValue('B14'), role: '可编辑(m²)' } },
+  { id: 'B15', type: 'custom', position: { x: 50, y: 420 }, data: { label: '场地等级', value: readValue('B15'), role: '可编辑(1-10)' } },
+  { id: 'B9', type: 'custom', position: { x: 50, y: 540 }, data: { label: '人工成本', value: readValue('B9'), role: '可编辑' } },
+  { id: 'B13', type: 'custom', position: { x: 50, y: 660 }, data: { label: '营销投入', value: readValue('B13'), role: '可编辑' } },
+
+  // ============ 🍞 运营中枢 (x=330) — 业务逻辑计算 ============
+  { id: 'B5', type: 'custom', position: { x: 330, y: 60 }, data: { label: '房租🏗️', value: readValue('B5'), role: '=面积×等级×折扣' } },
+  { id: 'B4', type: 'custom', position: { x: 330, y: 190 }, data: { label: '加工成本', value: readValue('B4'), role: '规模效应' } },
+  { id: 'B3', type: 'custom', position: { x: 330, y: 330 }, data: { label: '产能 ⚡', value: readValue('B3'), role: '冲突点' } },
+  { id: 'B1', type: 'custom', position: { x: 330, y: 490 }, data: { label: '售价', value: readValue('B1'), role: '可编辑' } },
+
+  // ============ 📊 市场反馈 (x=610) — 需求+缓存 ============
+  { id: 'B2', type: 'custom', position: { x: 610, y: 80 }, data: { label: '需求 ⚡', value: readValue('B2'), role: '冲突点' } },
+  { id: 'B16', type: 'custom', position: { x: 610, y: 220 }, data: { label: '上期需求📜', value: readValue('B16'), role: '缓存' } },
+  { id: 'B17', type: 'custom', position: { x: 610, y: 350 }, data: { label: '上期缺货率⚠️', value: readValue('B17'), role: '缓存' } },
+  { id: 'B18', type: 'custom', position: { x: 610, y: 480 }, data: { label: '上期报废率📦', value: readValue('B18'), role: '缓存' } },
+
+  // ============ 💰 财务结果 (x=850) — 最终输出 ============
+  { id: 'B12', type: 'custom', position: { x: 850, y: 80 }, data: { label: '总生产成本', value: readValue('B12'), role: '=(B10+B11+B4)×B3' } },
+  { id: 'B6', type: 'custom', position: { x: 850, y: 220 }, data: { label: '月收入', value: readValue('B6'), role: '=B1×MIN(B2,B3)' } },
+  { id: 'B7', type: 'custom', position: { x: 850, y: 360 }, data: { label: '总成本', value: readValue('B7'), role: '=B12+B5+B9+B13' } },
+  { id: 'B8', type: 'custom', position: { x: 850, y: 500 }, data: { label: '月利润', value: readValue('B8'), role: '=B6-B7' } },
 ])
 
 // === 边 ===
@@ -776,10 +779,10 @@ onUnmounted(() => { if (timer) clearInterval(timer) })
   position: absolute; font-size: 11px; font-weight: 700; padding: 2px 8px;
   border-radius: 4px; letter-spacing: 0.5px; opacity: 0.7;
 }
-.group-label.sc { left: 30px; top: 10px; color: #8b5cf6; background: #f5f3ff; }
-.group-label.prod { left: 350px; top: 10px; color: #0891b2; background: #ecfeff; }
-.group-label.market { left: 700px; top: 10px; color: #d97706; background: #fffbeb; }
-.group-label.fin { left: 530px; top: 10px; color: #059669; background: #ecfdf5; }
+.group-label.sc { left: 20px; top: 10px; color: #8b5cf6; background: #f5f3ff; }
+.group-label.prod { left: 280px; top: 10px; color: #0891b2; background: #ecfeff; }
+.group-label.market { left: 560px; top: 10px; color: #d97706; background: #fffbeb; }
+.group-label.fin { left: 800px; top: 10px; color: #059669; background: #ecfdf5; }
 
 /* === 节点样式 === */
 :deep(.vue-flow__node-custom) {

@@ -150,13 +150,11 @@
             <p class="gf-note">顶级地段(10级)流量是偏远(1级)的50倍，且自然支持¥25高客单价。</p>
           </div>
           <div class="g-formula">
-            <div class="gf-title">🏭 产能 (B3) — 6因素综合 SetRule</div>
-            <code>硬约束 = min(面积×25, 人工÷2.5)  // 每¥2.5出1产能(效率翻倍)</code>
-            <code>信心 = clamp(1.0 + 缺货率×0.5 − 报废率×0.5, 0.6, 1.4)</code>
-            <code>需求计划 = 上期需求 × 信心  // 动态备货</code>
-            <code>效率红利 = max(0, (2−加工成本)×200)  // 成本低→多产</code>
-            <code>B3 = max(50, min(硬约束, 需求计划+效率红利))  // 仅限50维护</code>
-            <p class="gf-note">人工效率翻倍(¥2.5/个)，取消30%强制下限，老板可完全控产。</p>
+            <div class="gf-title">🏭 产能 (B3) — 物理上限（非需求约束）</div>
+            <code>硬约束 = min(面积×25, 人工÷2.5)  // 每¥2.5出1产能</code>
+            <code>效率红利 = max(0, (2−加工成本)×200)  // 成本低→同资源多产</code>
+            <code>B3 = 硬约束 + 效率红利  // 纯物理产能，不含需求约束</code>
+            <p class="gf-note">B3 只反映你能产多少，不反映你能卖多少。供需差通过 报废率(B18) 和 月收入(B6) 体现。</p>
           </div>
           <div class="g-formula">
             <div class="gf-title">🏢 房租 (B5) — 非线性折扣</div>
@@ -287,7 +285,7 @@
           ⚡ B2(需求) SetRule: 价格+等级+营销 减去 B17缺货惩罚
         </div>
         <div v-if="selectedNode === 'B3'" class="detail-warning">
-          ⚡ B3(产能) 同权共预: 6条纠缠(set,权1)独立计算→结果一致
+          ⚡ B3(产能) 物理上限: 面积×25 ∩ 人工÷2.5 + 效率红利(2-B4)×200
         </div>
       </div>
     </div>
@@ -419,19 +417,13 @@ const edges = ref([
   { id: 'sr-b19-b2', source: 'B19', target: 'B2', label: '品牌溢价',
     style: { stroke: srColor, strokeWidth: 2 }, labelStyle: { fill: srColor, fontSize: 9 }, animated: true },
 
-  // — B3 产能: 6条同权重共同预言 (B16/B4/B9/B14/B17/B18 → B3, 权重1) —
-  { id: 'ent-b16-b3', source: 'B16', target: 'B3', label: '上期需求→计划',
+  // — B3 产能: 物理上限 (面积天花板 + 人工天花板 + 效率红利) —
+  { id: 'ent-b14-b3', source: 'B14', target: 'B3', label: '面积×25',
     style: { stroke: entColor, strokeWidth: 2, strokeDasharray: '6 3' }, labelStyle: { fill: entColor, fontSize: 9 }, animated: true },
-  { id: 'ent-b4-b3', source: 'B4', target: 'B3', label: '效率红利',
+  { id: 'ent-b9-b3', source: 'B9', target: 'B3', label: '人工÷2.5',
     style: { stroke: entColor, strokeWidth: 2, strokeDasharray: '6 3' }, labelStyle: { fill: entColor, fontSize: 9 }, animated: true },
-  { id: 'ent-b9-b3', source: 'B9', target: 'B3', label: '人力天花板',
+  { id: 'ent-b4-b3', source: 'B4', target: 'B3', label: '效率红利(2-B4)×200',
     style: { stroke: entColor, strokeWidth: 2, strokeDasharray: '6 3' }, labelStyle: { fill: entColor, fontSize: 9 }, animated: true },
-  { id: 'ent-b14-b3', source: 'B14', target: 'B3', label: '面积天花板',
-    style: { stroke: entColor, strokeWidth: 2, strokeDasharray: '6 3' }, labelStyle: { fill: entColor, fontSize: 9 }, animated: true },
-  { id: 'ent-b17-b3', source: 'B17', target: 'B3', label: '缺货→信心',
-    style: { stroke: entColor, strokeWidth: 2, strokeDasharray: '6 3' }, labelStyle: { fill: entColor, fontSize: 9 }, animated: true },
-  { id: 'ent-b18-b3', source: 'B18', target: 'B3', label: '报废→保守',
-    style: { stroke: '#8b5cf6', strokeWidth: 1.5, strokeDasharray: '3 3' }, labelStyle: { fill: '#8b5cf6', fontSize: 9 }, animated: true },
 ])
 
 // === 选中节点 ===
@@ -618,7 +610,7 @@ const PROPAGATION_STEPS: { nodes: string[]; edges: string[]; msg: string }[] = [
   { nodes: ['B5'], edges: ['sr-b14-b5', 'sr-b15-b5'], msg: '① SetRules: 房租=面积×等级×(20−面积×0.05) 非线性折扣' },
   { nodes: ['B16', 'B17'], edges: [], msg: '② 下月: 快照需求→B16, 缺货率→B17' },
   { nodes: ['B2'], edges: ['sr-b1-b2', 'sr-b15-b2', 'sr-b13-b2', 'sr-b17-b2', 'sr-b19-b2'], msg: '③ SetRules: 需求=交通流量×品牌留存率−缺货惩罚' },
-  { nodes: ['B3'], edges: ['ent-b16-b3', 'ent-b4-b3', 'ent-b9-b3', 'ent-b14-b3', 'ent-b17-b3', 'ent-b18-b3'], msg: '④ 同权共预: 产能=min(硬约束,上期×信心+红利)+50维护' },
+  { nodes: ['B3'], edges: ['ent-b14-b3', 'ent-b9-b3', 'ent-b4-b3'], msg: '④ 同权共预: 产能=min(面积×25, 人工÷2.5)+效率红利' },
   { nodes: ['B4'], edges: ['sr-b3-b4'], msg: '⑤ SetRule: 规模效应 产能越高→加工成本越低(下限¥0.1)' },
   { nodes: ['B12'], edges: ['sr-b10-b12', 'sr-b11-b12', 'sr-b4-b12', 'sr-b3-b12'], msg: '⑥ 供应链→生产成本' },
   { nodes: ['B6'], edges: ['sr-b1-b6', 'sr-b2-b6', 'sr-b3-b6'], msg: '⑦ 收入=售价×实际销售(产能限制)' },
@@ -682,11 +674,6 @@ function triggerPropagation() {
 function clearEdgeHighlights() {
   for (const edge of edges.value) {
     const isEnt = edge.id.startsWith('ent')
-    // B18→B3 has custom style
-    if (edge.id === 'ent-b18-b3') {
-      edge.style = { stroke: '#8b5cf6', strokeWidth: 1.5, strokeDasharray: '3 3' }
-      continue
-    }
     edge.style = {
       stroke: isEnt ? entColor : srColor,
       strokeWidth: 2,

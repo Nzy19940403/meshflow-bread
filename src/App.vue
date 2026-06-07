@@ -472,66 +472,42 @@ onMounted(() => {
       const computeB3Capacity = () => {
         const rawArea = engine2.raw.data.GetValue('B14', 'value')
         const rawLabor = engine2.raw.data.GetValue('B9', 'value')
-        const rawLastDemand = engine2.raw.data.GetValue('B16', 'value')
         const rawCost = engine2.raw.data.GetValue('B4', 'value')
-        const rawShortage = engine2.raw.data.GetValue('B17', 'value')
-        const rawWaste = engine2.raw.data.GetValue('B18', 'value')
         const area = (rawArea !== null && rawArea !== undefined) ? Number(rawArea) : 80
         const labor = (rawLabor !== null && rawLabor !== undefined) ? Number(rawLabor) : 15000
-        const lastDemand = (rawLastDemand !== null && rawLastDemand !== undefined) ? Number(rawLastDemand) : 1000
         const cost = (rawCost !== null && rawCost !== undefined) ? Number(rawCost) : 2
-        const shortage = (rawShortage !== null && rawShortage !== undefined) ? Number(rawShortage) : 0
-        const waste = (rawWaste !== null && rawWaste !== undefined) ? Number(rawWaste) : 0
         if (area <= 0 || labor <= 0) return 0
         const areaCap = Math.floor(area * 25)
-        const laborCap = Math.floor(labor / 2.5)  // 每¥2.5出1产能(原¥5)
+        const laborCap = Math.floor(labor / 2.5)
         const hardwareCap = Math.min(areaCap, laborCap)
-        const confidence = Math.max(0.6, Math.min(1.4, 1.0 + shortage * 0.5 - waste * 0.5))
-        const demandPlan = Math.round(lastDemand * confidence)
-        const costBonus = Math.max(0, Math.round((2 - cost) * 200))
-        const base = Math.min(hardwareCap, demandPlan + costBonus)
-        // 取消30%强制下限，改为固定维护量50，尊重老板控产意愿
-        return Math.max(50, Math.max(0, base))
+        // 效率红利: 加工成本低 < ¥2 → 同等资源下多产出
+        const efficiencyBonus = Math.max(0, Math.round((2 - cost) * 200))
+        // B3 = 物理产能上限，不含需求约束
+        // 需求约束由 B6 = B1×MIN(B2,B3) 处理
+        return Math.max(0, hardwareCap + efficiencyBonus)
       }
 
-      // B16上期需求→B3: 驱动月度备货计划
-      engine2.raw.config.useEntangle({
-        cause: 'B16', impact: 'B3', via: ['value'],
-        emit: (_src: any, _tgt: any, propose: any) => {
-          propose.set('value', computeB3Capacity(), 1)
-        },
-      })
-      // B4加工成本→B3: 成本效率上浮产能
-      engine2.raw.config.useEntangle({
-        cause: 'B4', impact: 'B3', via: ['value'],
-        emit: (_src: any, _tgt: any, propose: any) => {
-          propose.set('value', computeB3Capacity(), 1)
-        },
-      })
-      // B9人工→B3: 人力变化影响天花板
-      engine2.raw.config.useEntangle({
-        cause: 'B9', impact: 'B3', via: ['value'],
-        emit: (_src: any, _tgt: any, propose: any) => {
-          propose.set('value', computeB3Capacity(), 1)
-        },
-      })
-      // B14面积→B3: 面积变化影响天花板
+      // 物理产能 B3 由三条纠缠共同预言：面积、人工、加工成本效率
+      // 改面积→B3涨，改人工→B3涨，成本低→效率红利涨
+      // 注: B2(需求)不约束B3, 供需差异通过 B6=售价×MIN(B2,B3) 和 B18(报废率) 体现
+
+      // B14面积→B3
       engine2.raw.config.useEntangle({
         cause: 'B14', impact: 'B3', via: ['value'],
         emit: (_src: any, _tgt: any, propose: any) => {
           propose.set('value', computeB3Capacity(), 1)
         },
       })
-      // B17缺货率→B3: 缺货→信心系数调整
+      // B9人工→B3
       engine2.raw.config.useEntangle({
-        cause: 'B17', impact: 'B3', via: ['value'],
+        cause: 'B9', impact: 'B3', via: ['value'],
         emit: (_src: any, _tgt: any, propose: any) => {
           propose.set('value', computeB3Capacity(), 1)
         },
       })
-      // B18报废率→B3: 报废→信心系数调整
+      // B4加工成本→B3 (成本低→效率红利上浮产能)
       engine2.raw.config.useEntangle({
-        cause: 'B18', impact: 'B3', via: ['value'],
+        cause: 'B4', impact: 'B3', via: ['value'],
         emit: (_src: any, _tgt: any, propose: any) => {
           propose.set('value', computeB3Capacity(), 1)
         },

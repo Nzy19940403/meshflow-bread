@@ -421,12 +421,15 @@ onMounted(() => {
           const s = (shortage !== null && shortage !== undefined) ? Number(shortage) : 0
           const b = (brand !== null && brand !== undefined) ? Number(brand) : 0
 
-          // 流量 = 地段 + 营销
-          const traffic = g * 200 + Math.sqrt(Math.max(0, m)) * 15
+          // 流量 = 地段指数(等级^1.7) + 营销√效应
+          // 顶级地段(10级)流量是偏远(1级)的50倍，符合幂律分布
+          const traffic = Math.round(150 * Math.pow(g, 1.7)) + Math.sqrt(Math.max(0, m)) * 15
 
           // 品牌溢价: 每点知名度 +¥0.5 价格容忍度
           const brandPremium = b * 0.5
-          const maxAcceptable = 10 + brandPremium
+          // 地段溢价: 高级地段顾客天然接受更高价格
+          const locationPremium = g * 1.5
+          const maxAcceptable = 10 + locationPremium + brandPremium
 
           // 留存率: 价格 vs 品牌溢价能力
           let retention: number
@@ -481,14 +484,14 @@ onMounted(() => {
         const waste = (rawWaste !== null && rawWaste !== undefined) ? Number(rawWaste) : 0
         if (area <= 0 || labor <= 0) return 0
         const areaCap = Math.floor(area * 25)
-        const laborCap = Math.floor(labor / 5.0)
+        const laborCap = Math.floor(labor / 2.5)  // 每¥2.5出1产能(原¥5)
         const hardwareCap = Math.min(areaCap, laborCap)
         const confidence = Math.max(0.6, Math.min(1.4, 1.0 + shortage * 0.5 - waste * 0.5))
         const demandPlan = Math.round(lastDemand * confidence)
         const costBonus = Math.max(0, Math.round((2 - cost) * 200))
         const base = Math.min(hardwareCap, demandPlan + costBonus)
-        const minOp = Math.round(hardwareCap * 0.3)
-        return Math.max(minOp, Math.max(0, base))
+        // 取消30%强制下限，改为固定维护量50，尊重老板控产意愿
+        return Math.max(50, Math.max(0, base))
       }
 
       // B16上期需求→B3: 驱动月度备货计划
@@ -554,12 +557,16 @@ onMounted(() => {
           const payPerOutput = labor / Math.max(cap, 1)
           const utilization = cap / Math.max(area * 25, 1)
 
-          // 薪酬满意度: 每单位产能人工成本 >= 5 → 满意
+          // 薪酬满意度: 按地段生活成本浮动 baseline=3+等级×0.4
+          // 1级地段:3.4, 5级地段:5.0, 10级地段:7.0
+          const rawG = engine2.raw.data.GetValue('B15', 'value')
+          const grade = (rawG !== null && rawG !== undefined) ? Number(rawG) : 5
+          const payBaseline = 3.0 + grade * 0.4
           let paySat: number
-          if (payPerOutput >= 5) {
-            paySat = 0.7 + Math.min((payPerOutput - 5) / 10, 0.3)
+          if (payPerOutput >= payBaseline) {
+            paySat = 0.7 + Math.min((payPerOutput - payBaseline) / (payBaseline * 2), 0.3)
           } else {
-            paySat = payPerOutput / 5 * 0.7
+            paySat = payPerOutput / payBaseline * 0.7
           }
 
           // 过劳惩罚: 利用率超80%开始扣

@@ -141,21 +141,22 @@
           <summary>⚙️ 核心公式</summary>
           <div class="g-formula">
             <div class="gf-title">📊 需求 (B2) — 流量×留存率</div>
-            <code>流量 = 等级×200 + max(0, √营销×15)  // 地段+广告</code>
+            <code>流量 = round(150×等级^1.7) + max(0, √营销×15)  // 幂律分布</code>
+            <code>地段溢价 = 等级×1.5  // 高级地段顾客接受更高价</code>
             <code>品牌溢价 = 知名度×0.5  // 每点知名度+¥0.5价格容忍</code>
-            <code>可接受最高价 = 10 + 品牌溢价</code>
+            <code>可接受最高价 = 10 + 地段溢价 + 品牌溢价</code>
             <code>留存率 = if(售价≤可接受价) 0.5+(差价÷可接受价)×0.4 else 0.5×可接受价÷售价</code>
             <code>B2 = 流量 × 留存率 − 流量×缺货率×0.5</code>
-            <p class="gf-note">价在可接受范围内→高留存；超范围→比例衰减。知名度0时可接受仅¥10。</p>
+            <p class="gf-note">顶级地段(10级)流量是偏远(1级)的50倍，且自然支持¥25高客单价。</p>
           </div>
           <div class="g-formula">
             <div class="gf-title">🏭 产能 (B3) — 6因素综合 SetRule</div>
-            <code>硬约束 = min(面积×25, 人工÷5)  // 短板效应</code>
+            <code>硬约束 = min(面积×25, 人工÷2.5)  // 每¥2.5出1产能(效率翻倍)</code>
             <code>信心 = clamp(1.0 + 缺货率×0.5 − 报废率×0.5, 0.6, 1.4)</code>
             <code>需求计划 = 上期需求 × 信心  // 动态备货</code>
             <code>效率红利 = max(0, (2−加工成本)×200)  // 成本低→多产</code>
-            <code>B3 = max(硬约束×30%, min(硬约束, 需求计划+效率红利))</code>
-            <p class="gf-note">面积/人工决定天花板，上期需求+信心系数决定计划，成本效率提供上浮空间。</p>
+            <code>B3 = max(50, min(硬约束, 需求计划+效率红利))  // 仅限50维护</code>
+            <p class="gf-note">人工效率翻倍(¥2.5/个)，取消30%强制下限，老板可完全控产。</p>
           </div>
           <div class="g-formula">
             <div class="gf-title">🏢 房租 (B5) — 非线性折扣</div>
@@ -581,7 +582,7 @@ function advanceMonth() {
   const grade = Number(readValue('B15')) || 5
   const mkt = Number(readValue('B13')) || 0
   const oldBrand = Number(readValue('B19')) || 0
-  const traffic = grade * 200 + Math.sqrt(Math.max(0, mkt)) * 15
+  const traffic = Math.round(150 * Math.pow(grade, 1.7)) + Math.sqrt(Math.max(0, mkt)) * 15
   const growth = Math.round(taste * traffic / 100)
   const decay = Math.round(oldBrand * 0.05)
   const newBrand = Math.max(0, oldBrand + growth - decay)
@@ -617,7 +618,7 @@ const PROPAGATION_STEPS: { nodes: string[]; edges: string[]; msg: string }[] = [
   { nodes: ['B5'], edges: ['sr-b14-b5', 'sr-b15-b5'], msg: '① SetRules: 房租=面积×等级×(20−面积×0.05) 非线性折扣' },
   { nodes: ['B16', 'B17'], edges: [], msg: '② 下月: 快照需求→B16, 缺货率→B17' },
   { nodes: ['B2'], edges: ['sr-b1-b2', 'sr-b15-b2', 'sr-b13-b2', 'sr-b17-b2', 'sr-b19-b2'], msg: '③ SetRules: 需求=交通流量×品牌留存率−缺货惩罚' },
-  { nodes: ['B3'], edges: ['ent-b16-b3', 'ent-b4-b3', 'ent-b9-b3', 'ent-b14-b3', 'ent-b17-b3', 'ent-b18-b3'], msg: '④ 同权共预: 6条纠缠各算全量→B3' },
+  { nodes: ['B3'], edges: ['ent-b16-b3', 'ent-b4-b3', 'ent-b9-b3', 'ent-b14-b3', 'ent-b17-b3', 'ent-b18-b3'], msg: '④ 同权共预: 产能=min(硬约束,上期×信心+红利)+50维护' },
   { nodes: ['B4'], edges: ['sr-b3-b4'], msg: '⑤ SetRule: 规模效应 产能越高→加工成本越低(下限¥0.1)' },
   { nodes: ['B12'], edges: ['sr-b10-b12', 'sr-b11-b12', 'sr-b4-b12', 'sr-b3-b12'], msg: '⑥ 供应链→生产成本' },
   { nodes: ['B6'], edges: ['sr-b1-b6', 'sr-b2-b6', 'sr-b3-b6'], msg: '⑦ 收入=售价×实际销售(产能限制)' },

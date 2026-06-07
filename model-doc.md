@@ -21,6 +21,7 @@
 | B15 | 场地等级 | 输入 | 🏭供应链 | ✅ |
 | B16 | 上期需求📜 | 缓存 | 🏪市场 | ❌(下月按钮) |
 | B17 | 上期缺货率⚠️ | 缓存 | 🏪市场 | ❌(下月按钮) |
+| B18 | 上期报废率📦 | 缓存 | 🏪市场 | ❌(下月按钮) |
 
 ## 二、初始值
 
@@ -35,6 +36,7 @@
 | B15 | 5 |
 | B16 | 3600 |
 | B17 | 0 |
+| B18 | 0 |
 
 ## 三、核心公式
 
@@ -67,9 +69,20 @@ B4 = max(0.1, 2 − B3 × 0.0002)
 ```
 说明：产能越高加工成本越低。下限0.1元/个（原0.5元），斜率加倍。B3=5000时B4=1.0（原1.5）。
 
-### 纠缠边（循环依赖 + 冲突仲裁）
+### 纠缠边（循环依赖 + 冲突仲裁 + 动态备货系数）
 
 所有纠缠边运行时，同一节点收到多个提案时，**权重最高的获胜**（Ghost仲裁）。
+所有向 B3 写提案的纠缠边均使用**动态备货系数**替代固定 1.2 倍：
+
+```
+上期缺货率 = B17
+上期报废率 = B18
+备货信心系数 = max(0.6, min(1.4, 1.0 + B17×0.5 − B18×0.5))
+
+如果上期有缺货（B17>0）：信心↑，多备货（接近 1.4）
+如果上期有报废（B18>0）：信心↓，少备货（接近 0.6）
+理想情况（B17=B18=0）：信心=1.0，刚好补足
+```
 
 #### E1: B16→B3（权重10 — 产能计划主要驱动力）
 ```
@@ -83,7 +96,7 @@ baseFromArea  = floor(area × 25)       // 每m²可放25个面包
 baseFromLabor = floor(labor / 5.0)      // 每5元人工出1个产能（原7.2元）
 resourceCap   = min(baseFromArea, baseFromLabor) // 短板效应
 
-B3 = min(resourceCap, round(lastDemand × 1.2))  // 按上期需求120%备货
+B3 = min(resourceCap, round(lastDemand × conf))  // 按上期需求×动态系数备货
 ```
 
 #### E2: B4→B3（权重7 — 成本效率红利）
@@ -91,7 +104,7 @@ B3 = min(resourceCap, round(lastDemand × 1.2))  // 按上期需求120%备货
 area  = B14
 labor = B9
 lastDemand = B16
-fromDemand = round(lastDemand × 1.2)
+fromDemand = round(lastDemand × conf)
 
 如果 area<=0 或 labor<=0: B3=0
 
@@ -114,7 +127,7 @@ lastDemand = B16
 
 resourceCap = min(floor(area × 25), floor(labor / 5.0))
 
-B3 = min(resourceCap, round(lastDemand × 1.2))
+B3 = min(resourceCap, round(lastDemand × conf))
 ```
 
 #### E4: B14→B3（权重8 — 面积变化→资源上限）
@@ -127,7 +140,7 @@ lastDemand = B16
 
 resourceCap = min(floor(area × 25), floor(labor / 5.0))
 
-B3 = min(resourceCap, round(lastDemand × 1.2))
+B3 = min(resourceCap, round(lastDemand × conf))
 ```
 
 ### 衍生公式（MeshFlow公式引擎，无需手动推演）
@@ -152,9 +165,11 @@ profit  = B8(当前月利润)
 2. 累加: 年利润 += profit, 年收入 += revenue, 年成本 += cost
 3. 计算缺货率:
    shortage = (cap>=demand || demand<=0) ? 0 : round((demand-cap)/demand × 1000) / 1000
-4. 快照: B16 = demand, B17 = shortage
-5. 触发全引擎传播（SetRules + 纠缠收敛）
-6. 月份+1
+4. 计算报废率:
+   waste = (cap>demand && cap>0) ? round((cap-demand)/cap × 1000) / 1000 : 0
+5. 快照: B16 = demand, B17 = shortage, B18 = waste
+6. 触发全引擎传播（SetRules + 纠缠收敛）
+7. 月份+1
 ```
 
 ## 五、推演流程（单次传播顺序）

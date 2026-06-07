@@ -50,7 +50,11 @@ function setupModel(engine: ReturnType<typeof createSheetEngine>) {
       const baseFromLabor = Math.floor(labor / 5.0)
       const resourceCap = Math.min(baseFromArea, baseFromLabor)
       const ld = Number(_src.state.value || 1000)
-      propose.set('value', Math.min(resourceCap, Math.round(ld * 1.2)), 10)
+      // 动态备货系数
+      const shortage = Number(eng.data.GetValue('B17', 'value')) || 0
+      const wasteRate = Number(eng.data.GetValue('B18', 'value')) || 0
+      const conf = Math.max(0.6, Math.min(1.4, 1.0 + shortage * 0.5 - wasteRate * 0.5))
+      propose.set('value', Math.min(resourceCap, Math.round(ld * conf)), 10)
     },
   })
 
@@ -61,7 +65,11 @@ function setupModel(engine: ReturnType<typeof createSheetEngine>) {
       const area = Number(eng.data.GetValue('B14', 'value') ?? 80)
       const labor = Number(eng.data.GetValue('B9', 'value') ?? 15000)
       const ld = Number(eng.data.GetValue('B16', 'value') ?? 1000)
-      const fromDemand = Math.round(ld * 1.2)
+      // 动态备货系数
+      const shortage = Number(eng.data.GetValue('B17', 'value')) || 0
+      const wasteRate = Number(eng.data.GetValue('B18', 'value')) || 0
+      const conf = Math.max(0.6, Math.min(1.4, 1.0 + shortage * 0.5 - wasteRate * 0.5))
+      const fromDemand = Math.round(ld * conf)
       if (area <= 0 || labor <= 0) { propose.set('value', 0, 7); return }
       const baseFromArea = Math.floor(area * 25)
       const baseFromLabor = Math.floor(labor / 5.0)
@@ -80,7 +88,11 @@ function setupModel(engine: ReturnType<typeof createSheetEngine>) {
       if (area <= 0 || labor <= 0) { propose.set('value', 0, 8); return }
       const resourceCap = Math.min(Math.floor(area * 25), Math.floor(labor / 5.0))
       const ld = Number(eng.data.GetValue('B16', 'value') ?? 1000)
-      propose.set('value', Math.min(resourceCap, Math.round(ld * 1.2)), 8)
+      // 动态备货系数
+      const shortage = Number(eng.data.GetValue('B17', 'value')) || 0
+      const wasteRate = Number(eng.data.GetValue('B18', 'value')) || 0
+      const conf = Math.max(0.6, Math.min(1.4, 1.0 + shortage * 0.5 - wasteRate * 0.5))
+      propose.set('value', Math.min(resourceCap, Math.round(ld * conf)), 8)
     },
   })
 
@@ -93,7 +105,11 @@ function setupModel(engine: ReturnType<typeof createSheetEngine>) {
       if (area <= 0 || labor <= 0) { propose.set('value', 0, 8); return }
       const resourceCap = Math.min(Math.floor(area * 25), Math.floor(labor / 5.0))
       const ld = Number(eng.data.GetValue('B16', 'value') ?? 1000)
-      propose.set('value', Math.min(resourceCap, Math.round(ld * 1.2)), 8)
+      // 动态备货系数
+      const shortage = Number(eng.data.GetValue('B17', 'value')) || 0
+      const wasteRate = Number(eng.data.GetValue('B18', 'value')) || 0
+      const conf = Math.max(0.6, Math.min(1.4, 1.0 + shortage * 0.5 - wasteRate * 0.5))
+      propose.set('value', Math.min(resourceCap, Math.round(ld * conf)), 8)
     },
   })
 
@@ -117,6 +133,7 @@ async function initParams(engine: ReturnType<typeof createSheetEngine>, params: 
   eng.data.SilentSet('B15', 'value', params.B15); eng.data.SilentSet('B15', 'formula', '')
   eng.data.SilentSet('B16', 'value', 3600); eng.data.SilentSet('B16', 'formula', '')
   eng.data.SilentSet('B17', 'value', 0); eng.data.SilentSet('B17', 'formula', '')
+  eng.data.SilentSet('B18', 'value', 0); eng.data.SilentSet('B18', 'formula', '')
 
   engine.setCellFormula('B6', '=B1*MIN(B2,B3)')
   engine.setCellFormula('B12', '=(B10+B11+B4)*B3')
@@ -157,8 +174,10 @@ async function runYear(engine: ReturnType<typeof createSheetEngine>) {
     })
 
     const shortage = (b3 < b2 && b2 > 0) ? Math.round((b2 - b3) / b2 * 1000) / 1000 : 0
+    const waste = (b3 > b2 && b3 > 0) ? Math.round((b3 - b2) / b3 * 1000) / 1000 : 0
     engine.raw.data.SetValue('B16', 'value', b2)
     engine.raw.data.SetValue('B17', 'value', shortage)
+    engine.raw.data.SetValue('B18', 'value', waste)
     await new Promise(r => setTimeout(r, 50))
   }
 

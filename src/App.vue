@@ -543,9 +543,12 @@ onMounted(() => {
           const baseFromArea = Math.floor(area * 25)
           const baseFromLabor = Math.floor(labor / 5.0)
           const resourceCap = Math.min(baseFromArea, baseFromLabor)
-          // 上期需求驱动本期产能计划,备货120%
+          // 动态备货系数: 依赖上期缺货/报废率
           const lastDemand = src.state.value || 1000
-          propose.set('value', Math.min(resourceCap, Math.round(lastDemand * 1.2)), 10)
+          const shortage = Number(engine2.raw.data.GetValue('B17', 'value')) || 0
+          const wasteRate = Number(engine2.raw.data.GetValue('B18', 'value')) || 0
+          const conf = Math.max(0.6, Math.min(1.4, 1.0 + shortage * 0.5 - wasteRate * 0.5))
+          propose.set('value', Math.min(resourceCap, Math.round(lastDemand * conf)), 10)
         },
       })
       // 纠缠: B4加工成本→B3产能 (成本低→投资更多)
@@ -557,7 +560,12 @@ onMounted(() => {
           const area = (rawArea !== null && rawArea !== undefined) ? Number(rawArea) : 80
           const labor = (rawLabor !== null && rawLabor !== undefined) ? Number(rawLabor) : 15000
           const lastDemand = engine2.raw.data.GetValue('B16', 'value')
-          const fromDemand = Math.round((lastDemand !== null && lastDemand !== undefined ? Number(lastDemand) : 1000) * 1.2)
+          const ld = (lastDemand !== null && lastDemand !== undefined) ? Number(lastDemand) : 1000
+          // 动态备货系数
+          const shortage = Number(engine2.raw.data.GetValue('B17', 'value')) || 0
+          const wasteRate = Number(engine2.raw.data.GetValue('B18', 'value')) || 0
+          const conf = Math.max(0.6, Math.min(1.4, 1.0 + shortage * 0.5 - wasteRate * 0.5))
+          const fromDemand = Math.round(ld * conf)
           if (area <= 0 || labor <= 0) { propose.set('value', 0, 7); return }
           const baseFromArea = Math.floor(area * 25)
           const baseFromLabor = Math.floor(labor / 5.0)
@@ -588,7 +596,11 @@ onMounted(() => {
           const resourceCap = Math.min(Math.floor(area * 25), Math.floor(labor / 5.0))
           const lastDemand = engine2.raw.data.GetValue('B16', 'value')
           const d = (lastDemand !== null && lastDemand !== undefined) ? Number(lastDemand) : 1000
-          propose.set('value', Math.min(resourceCap, Math.round(d * 1.2)), 8)
+          // 动态备货系数
+          const shortage = Number(engine2.raw.data.GetValue('B17', 'value')) || 0
+          const wasteRate = Number(engine2.raw.data.GetValue('B18', 'value')) || 0
+          const conf = Math.max(0.6, Math.min(1.4, 1.0 + shortage * 0.5 - wasteRate * 0.5))
+          propose.set('value', Math.min(resourceCap, Math.round(d * conf)), 8)
         },
       })
       // —— 纠缠: B14面积→B3产能 (面积变化直接触发重算) ——
@@ -603,7 +615,11 @@ onMounted(() => {
           const resourceCap = Math.min(Math.floor(area * 25), Math.floor(labor / 5.0))
           const lastDemand = engine2.raw.data.GetValue('B16', 'value')
           const d = (lastDemand !== null && lastDemand !== undefined) ? Number(lastDemand) : 1000
-          propose.set('value', Math.min(resourceCap, Math.round(d * 1.2)), 8)
+          // 动态备货系数
+          const shortage = Number(engine2.raw.data.GetValue('B17', 'value')) || 0
+          const wasteRate = Number(engine2.raw.data.GetValue('B18', 'value')) || 0
+          const conf = Math.max(0.6, Math.min(1.4, 1.0 + shortage * 0.5 - wasteRate * 0.5))
+          propose.set('value', Math.min(resourceCap, Math.round(d * conf)), 8)
         },
       })
 
@@ -628,6 +644,8 @@ onMounted(() => {
     engine2.raw.data.SilentSet('B16', 'formula', '')
     engine2.raw.data.SilentSet('B17', 'value', 0)
     engine2.raw.data.SilentSet('B17', 'formula', '')
+    engine2.raw.data.SilentSet('B18', 'value', 0)
+    engine2.raw.data.SilentSet('B18', 'formula', '')
 
     // A列标签
     engine.setCellValue('A1', '💰 售价(元)')
@@ -643,6 +661,7 @@ onMounted(() => {
     engine.setCellValue('A15', '⭐ 场地等级(1-10)')
     engine.setCellValue('A16', '📜 上期需求')
     engine.setCellValue('A17', '⚠️ 上期缺货率')
+    engine.setCellValue('A18', '📦 上期报废率')
 
     // 衍生公式 (在 SilentSet 之后, notifyAll 之前注册)
     engine.setCellFormula('B6', '=B1*MIN(B2,B3)')            // 月收入 = 售价 × 实际销售(产能限制)

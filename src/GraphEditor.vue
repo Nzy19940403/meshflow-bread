@@ -175,7 +175,7 @@ const nodeIcons: Record<string, string> = {
   B1: '💰', B2: '📊', B3: '🏭', B4: '🔧', B5: '🏢',
   B6: '📈', B7: '📉', B8: '✅', B9: '👷',
   B10: '🥖', B11: '📦', B12: '🏗️', B13: '📢', B14: '📐', B15: '⭐',
-  B16: '📜', B17: '⚠️',
+  B16: '📜', B17: '⚠️', B18: '📦',
 }
 
 function formatVal(v: any): string {
@@ -203,6 +203,7 @@ const nodes = ref([
   { id: 'B15', type: 'custom', position: { x: 750, y: 440 }, data: { label: '场地等级', value: readValue('B15'), role: '可编辑(1-10)' } },
   { id: 'B16', type: 'custom', position: { x: 930, y: 80 }, data: { label: '上期需求📜', value: readValue('B16'), role: '缓存' } },
   { id: 'B17', type: 'custom', position: { x: 930, y: 200 }, data: { label: '上期缺货率⚠️', value: readValue('B17'), role: '缓存' } },
+  { id: 'B18', type: 'custom', position: { x: 930, y: 320 }, data: { label: '上期报废率📦', value: readValue('B18'), role: '缓存' } },
   // 💰 财务
   { id: 'B5', type: 'custom', position: { x: 280, y: 540 }, data: { label: '房租🏗️', value: readValue('B5'), role: '=面积×等级×20' } },
   { id: 'B6', type: 'custom', position: { x: 460, y: 540 }, data: { label: '月收入', value: readValue('B6'), role: '=B1×MIN(B2,B3)' } },
@@ -257,6 +258,8 @@ const edges = ref([
     style: { stroke: entColor, strokeWidth: 2, strokeDasharray: '6 3' }, labelStyle: { fill: entColor, fontSize: 9 }, animated: true },
   { id: 'sr-b17-b2', source: 'B17', target: 'B2', label: '缺货惩罚',
     style: { stroke: srColor, strokeWidth: 2, strokeDasharray: '4 2' }, labelStyle: { fill: srColor, fontSize: 9 } },
+  { id: 'ent-b18-b3', source: 'B18', target: 'B3', label: '报废→保守 隐',
+    style: { stroke: '#8b5cf6', strokeWidth: 1.5, strokeDasharray: '3 3' }, labelStyle: { fill: '#8b5cf6', fontSize: 9 }, animated: true },
 ])
 
 // === 选中节点 ===
@@ -392,6 +395,9 @@ function advanceMonth() {
   props.engine.setCellValue('B16', String(demand))
   // 写缺货率 → B17 (触发需求重算)
   props.engine.setCellValue('B17', String(shortage))
+  // 计算报废率（产能过剩比例）
+  const waste = (cap > demand && cap > 0) ? Math.round((cap - demand) / cap * 1000) / 1000 : 0
+  props.engine.setCellValue('B18', String(waste))
   triggerPropagation()
   setTimeout(() => refreshAllValues(), 300)
 
@@ -470,7 +476,7 @@ function triggerPropagation() {
   setTimeout(() => {
     if (propagationGen.value !== gen) return
     // 标记最后收敛的节点为"变化"
-    const finalIds = ['B1','B2','B3','B4','B5','B6','B7','B8','B16','B17']
+    const finalIds = ['B1','B2','B3','B4','B5','B6','B7','B8','B16','B17','B18']
     changedNodes.value = new Set(finalIds)
     // 1.5秒后清除高亮
     setTimeout(() => {
@@ -488,6 +494,11 @@ function triggerPropagation() {
 function clearEdgeHighlights() {
   for (const edge of edges.value) {
     const isEnt = edge.id.startsWith('ent')
+    // B18→B3 has custom style
+    if (edge.id === 'ent-b18-b3') {
+      edge.style = { stroke: '#8b5cf6', strokeWidth: 1.5, strokeDasharray: '3 3' }
+      continue
+    }
     edge.style = {
       stroke: isEnt ? entColor : srColor,
       strokeWidth: 2,
@@ -513,7 +524,7 @@ function wasChanged(id: string): boolean {
 
 // 刷新所有节点的值
 function refreshAllValues() {
-  const ids = ['B1', 'B2', 'B3', 'B4', 'B5', 'B6', 'B7', 'B8', 'B9', 'B10', 'B11', 'B12', 'B13', 'B14', 'B15', 'B16', 'B17']
+  const ids = ['B1', 'B2', 'B3', 'B4', 'B5', 'B6', 'B7', 'B8', 'B9', 'B10', 'B11', 'B12', 'B13', 'B14', 'B15', 'B16', 'B17', 'B18']
   for (const id of ids) {
     const node = nodes.value.find(n => n.id === id)
     if (node) node.data.value = readValue(id)

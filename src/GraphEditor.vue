@@ -140,17 +140,22 @@
         <details class="g-section" open>
           <summary>⚙️ 核心公式</summary>
           <div class="g-formula">
-            <div class="gf-title">📊 需求 (B2)</div>
-            <code>base = max(300, 5000−售价×200) + 等级×200 + √营销×15</code>
-            <code>B2 = base − base × 缺货率 × 0.5</code>
-            <p class="gf-note">价越低需求越大(底线300)；等级和营销加成；缺货流失顾客。</p>
+            <div class="gf-title">📊 需求 (B2) — 流量×留存率</div>
+            <code>流量 = 等级×200 + max(0, √营销×15)  // 地段+广告</code>
+            <code>品牌溢价 = 知名度×0.5  // 每点知名度+¥0.5价格容忍</code>
+            <code>可接受最高价 = 10 + 品牌溢价</code>
+            <code>留存率 = if(售价≤可接受价) 0.5+(差价÷可接受价)×0.4 else 0.5×可接受价÷售价</code>
+            <code>B2 = 流量 × 留存率 − 流量×缺货率×0.5</code>
+            <p class="gf-note">价在可接受范围内→高留存；超范围→比例衰减。知名度0时可接受仅¥10。</p>
           </div>
           <div class="g-formula">
-            <div class="gf-title">🏭 产能 (B3) — 4条纠缠边冲突仲裁</div>
-            <code>资源上限 = min(面积×25, 人工÷5)  // 短板效应</code>
+            <div class="gf-title">🏭 产能 (B3) — 6因素综合 SetRule</div>
+            <code>硬约束 = min(面积×25, 人工÷5)  // 短板效应</code>
             <code>信心 = clamp(1.0 + 缺货率×0.5 − 报废率×0.5, 0.6, 1.4)</code>
-            <code>B3 = min(资源上限, 上期需求 × 信心)  // 动态备货</code>
-            <p class="gf-note">店长会从错误中学习：缺货→多备，报废→少备。</p>
+            <code>需求计划 = 上期需求 × 信心  // 动态备货</code>
+            <code>效率红利 = max(0, (2−加工成本)×200)  // 成本低→多产</code>
+            <code>B3 = max(硬约束×30%, min(硬约束, 需求计划+效率红利))</code>
+            <p class="gf-note">面积/人工决定天花板，上期需求+信心系数决定计划，成本效率提供上浮空间。</p>
           </div>
           <div class="g-formula">
             <div class="gf-title">🏢 房租 (B5) — 非线性折扣</div>
@@ -281,7 +286,7 @@
           ⚡ B2(需求) SetRule: 价格+等级+营销 减去 B17缺货惩罚
         </div>
         <div v-if="selectedNode === 'B3'" class="detail-warning">
-          ⚡ B3(产能) 上期需求(权10)← VS 成本红利(权7)→
+          ⚡ B3(产能) SetRule: B14面积+B9人工+B16上期+B4效率+B17信心+B18报废
         </div>
       </div>
     </div>
@@ -413,15 +418,15 @@ const edges = ref([
   { id: 'sr-b19-b2', source: 'B19', target: 'B2', label: '品牌溢价',
     style: { stroke: srColor, strokeWidth: 2 }, labelStyle: { fill: srColor, fontSize: 9 }, animated: true },
 
-  // — 滞后纠缠: 上期需求→产能计划 + 成本红利 + 缺货惩罚 —
-  { id: 'ent-b16-b3', source: 'B16', target: 'B3', label: '📜上期→产 权10',
-    style: { stroke: entColor, strokeWidth: 2, strokeDasharray: '6 3' }, labelStyle: { fill: entColor, fontSize: 9 }, animated: true },
-  { id: 'ent-b4-b3', source: 'B4', target: 'B3', label: '本低→扩产 权7',
-    style: { stroke: entColor, strokeWidth: 2, strokeDasharray: '6 3' }, labelStyle: { fill: entColor, fontSize: 9 }, animated: true },
-  { id: 'sr-b17-b2', source: 'B17', target: 'B2', label: '缺货惩罚',
+  // — B3 产能 SetRule: 多因素综合计算 (面积×25, 人工÷5, 上期需求×系数, 成本红利) —
+  { id: 'sr-b16-b3', source: 'B16', target: 'B3', label: '上期需求→计划',
     style: { stroke: srColor, strokeWidth: 2, strokeDasharray: '4 2' }, labelStyle: { fill: srColor, fontSize: 9 } },
-  { id: 'ent-b18-b3', source: 'B18', target: 'B3', label: '报废→保守 隐',
-    style: { stroke: '#8b5cf6', strokeWidth: 1.5, strokeDasharray: '3 3' }, labelStyle: { fill: '#8b5cf6', fontSize: 9 }, animated: true },
+  { id: 'sr-b4-b3', source: 'B4', target: 'B3', label: '效率红利',
+    style: { stroke: srColor, strokeWidth: 2, strokeDasharray: '4 2' }, labelStyle: { fill: srColor, fontSize: 9 } },
+  { id: 'sr-b17-b3', source: 'B17', target: 'B3', label: '缺货→信心',
+    style: { stroke: srColor, strokeWidth: 2, strokeDasharray: '4 2' }, labelStyle: { fill: srColor, fontSize: 9 } },
+  { id: 'sr-b18-b3', source: 'B18', target: 'B3', label: '报废→保守',
+    style: { stroke: '#8b5cf6', strokeWidth: 1.5, strokeDasharray: '3 3' }, labelStyle: { fill: '#8b5cf6', fontSize: 9 } },
 ])
 
 // === 选中节点 ===
@@ -607,14 +612,13 @@ const PROPAGATION_STEPS: { nodes: string[]; edges: string[]; msg: string }[] = [
   { nodes: ['B1', 'B14', 'B15', 'B9', 'B13'], edges: [], msg: '⚡ 改售价/面积/等级/人工/营销' },
   { nodes: ['B5'], edges: ['sr-b14-b5', 'sr-b15-b5'], msg: '① SetRules: 房租=面积×等级×(20−面积×0.05) 非线性折扣' },
   { nodes: ['B16', 'B17'], edges: [], msg: '② 下月: 快照需求→B16, 缺货率→B17' },
-  { nodes: ['B2'], edges: ['sr-b1-b2', 'sr-b15-b2', 'sr-b13-b2', 'sr-b17-b2'], msg: '③ SetRules: 需求=价格+等级+营销−缺货惩罚' },
-  { nodes: ['B3'], edges: ['ent-b16-b3', 'sr-b14-b3', 'sr-b9-b3'], msg: '④ 滞后纠缠: 上期需求+资源→产能计划' },
-  { nodes: ['B4'], edges: ['sr-b3-b4'], msg: '⑤ SetRule: 规模效应 产高→加工成本低(下限0.1,斜率×2)' },
-  { nodes: ['B3'], edges: ['ent-b4-b3'], msg: '⑥ 纠缠 B4→B3(权7): 低成本→效率提升' },
-  { nodes: ['B12'], edges: ['sr-b10-b12', 'sr-b11-b12', 'sr-b4-b12', 'sr-b3-b12'], msg: '⑦ 供应链→生产成本' },
-  { nodes: ['B6'], edges: ['sr-b1-b6', 'sr-b2-b6', 'sr-b3-b6'], msg: '⑧ 收入=售价×实际销售(产能限制)' },
-  { nodes: ['B7'], edges: ['sr-b12-b7', 'sr-b5-b7', 'sr-b9-b7', 'sr-b13-b7'], msg: '⑨ 总成本=生产+房租+人工+营销' },
-  { nodes: ['B8'], edges: ['sr-b6-b8', 'sr-b7-b8'], msg: '⑩ 利润=收入-总成本' },
+  { nodes: ['B2'], edges: ['sr-b1-b2', 'sr-b15-b2', 'sr-b13-b2', 'sr-b17-b2', 'sr-b19-b2'], msg: '③ SetRules: 需求=交通流量×品牌留存率−缺货惩罚' },
+  { nodes: ['B3'], edges: ['sr-b14-b3', 'sr-b9-b3', 'sr-b16-b3', 'sr-b4-b3', 'sr-b17-b3', 'sr-b18-b3'], msg: '④ SetRule: 产能=min(硬约束, 需求计划+效率红利)' },
+  { nodes: ['B4'], edges: ['sr-b3-b4'], msg: '⑤ SetRule: 规模效应 产能越高→加工成本越低(下限¥0.1)' },
+  { nodes: ['B12'], edges: ['sr-b10-b12', 'sr-b11-b12', 'sr-b4-b12', 'sr-b3-b12'], msg: '⑥ 供应链→生产成本' },
+  { nodes: ['B6'], edges: ['sr-b1-b6', 'sr-b2-b6', 'sr-b3-b6'], msg: '⑦ 收入=售价×实际销售(产能限制)' },
+  { nodes: ['B7'], edges: ['sr-b12-b7', 'sr-b5-b7', 'sr-b9-b7', 'sr-b13-b7'], msg: '⑧ 总成本=生产+房租+人工+营销' },
+  { nodes: ['B8'], edges: ['sr-b6-b8', 'sr-b7-b8'], msg: '⑨ 利润=收入-总成本' },
 ]
 
 function triggerPropagation() {
@@ -672,21 +676,16 @@ function triggerPropagation() {
 
 function clearEdgeHighlights() {
   for (const edge of edges.value) {
-    const isEnt = edge.id.startsWith('ent')
     // B18→B3 has custom style
-    if (edge.id === 'ent-b18-b3') {
+    if (edge.id === 'sr-b18-b3') {
       edge.style = { stroke: '#8b5cf6', strokeWidth: 1.5, strokeDasharray: '3 3' }
       continue
     }
+    const isDashed = ['sr-b14-', 'sr-b9-', 'sr-b13-', 'sr-b17-', 'sr-b16-', 'sr-b4-', 'sr-b18-', 'sr-b3-b21', 'sr-b3-b20', 'sr-b14-b21', 'sr-b14-b20'].some(p => edge.id.startsWith(p))
     edge.style = {
-      stroke: isEnt ? entColor : srColor,
+      stroke: srColor,
       strokeWidth: 2,
-      ...(isEnt
-        ? { strokeDasharray: '6 3' }
-        : edge.id.startsWith('sr-b14-') || edge.id.startsWith('sr-b9-') || edge.id.startsWith('sr-b13-') || edge.id.startsWith('sr-b17-')
-          ? { strokeDasharray: '4 2' }
-          : {}
-      ),
+      ...(isDashed ? { strokeDasharray: '4 2' } : {}),
     }
   }
 }

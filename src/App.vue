@@ -443,91 +443,45 @@ onMounted(() => {
         triggerKeys: ['value', 'value', 'value', 'value', 'value'],
       } as any)
 
-      // B16上期需求→B3产能 (动态备货系数)
-      engine2.raw.config.useEntangle({
-        cause: 'B16', impact: 'B3', via: ['value'],
-        emit: (src: any, tgt: any, propose: any) => {
-          const rawArea = engine2.raw.data.GetValue('B14', 'value')
-          const rawLabor = engine2.raw.data.GetValue('B9', 'value')
-          const area = (rawArea !== null && rawArea !== undefined) ? Number(rawArea) : 80
-          const labor = (rawLabor !== null && rawLabor !== undefined) ? Number(rawLabor) : 15000
-          if (area <= 0 || labor <= 0) { propose.set('value', 0, 10); return }
-          const baseFromArea = Math.floor(area * 25)
-          const baseFromLabor = Math.floor(labor / 5.0)
-          const resourceCap = Math.min(baseFromArea, baseFromLabor)
-          const lastDemand = src.state.value || 1000
-          const shortage = Number(engine2.raw.data.GetValue('B17', 'value')) || 0
-          const wasteRate = Number(engine2.raw.data.GetValue('B18', 'value')) || 0
-          const conf = Math.max(0.6, Math.min(1.4, 1.0 + shortage * 0.5 - wasteRate * 0.5))
-          propose.set('value', Math.min(resourceCap, Math.round(lastDemand * conf)), 10)
+      // —— B3 产能: 多因素综合 SetRule（替代原来的4条纠缠仲裁） ——
+      // 输入: B14面积, B9人工, B16上期需求, B4加工成本, B17缺货率, B18报废率
+      engine2.raw.config.SetRules(
+        ['B14', 'B9', 'B16', 'B4', 'B17', 'B18'], 'B3', 'value', {
+        logic: ({ slot }: any) => {
+          const area = Number(slot.triggerTargets[0]?.value) || 80
+          const labor = Number(slot.triggerTargets[1]?.value) || 15000
+          const lastDemand = Number(slot.triggerTargets[2]?.value) || 1000
+          const cost = Number(slot.triggerTargets[3]?.value) || 2
+          const shortage = Number(slot.triggerTargets[4]?.value) || 0
+          const waste = Number(slot.triggerTargets[5]?.value) || 0
+
+          // ① 硬约束：面积×25  vs  人工÷5 → 短板效应
+          const areaCap = Math.floor(area * 25)
+          const laborCap = Math.floor(labor / 5.0)
+          const hardwareCap = Math.min(areaCap, laborCap)
+          if (hardwareCap <= 0) return 0
+
+          // ② 需求计划：上期销量 × 动态信心系数
+          const confidence = Math.max(0.6, Math.min(1.4, 1.0 + shortage * 0.5 - waste * 0.5))
+          const demandPlan = Math.round(lastDemand * confidence)
+
+          // ③ 效率红利：加工成本低 → 同资源下多产出
+          const costBonus = Math.max(0, Math.round((2 - cost) * 200))
+
+          // ④ 组合：最终产能 = min(硬件天花板, 需求计划 + 效率红利)
+          //    硬件天花板设下限：至少 30% 产能用来做试制/培训/展示
+          const baseProduction = Math.min(hardwareCap, demandPlan + costBonus)
+          const minOperation = Math.round(hardwareCap * 0.3)
+          return Math.max(minOperation, Math.max(0, baseProduction))
         },
-      })
-      // B4加工成本→B3产能
-      engine2.raw.config.useEntangle({
-        cause: 'B4', impact: 'B3', via: ['value'],
-        emit: (src: any, tgt: any, propose: any) => {
-          const rawArea = engine2.raw.data.GetValue('B14', 'value')
-          const rawLabor = engine2.raw.data.GetValue('B9', 'value')
-          const area = (rawArea !== null && rawArea !== undefined) ? Number(rawArea) : 80
-          const labor = (rawLabor !== null && rawLabor !== undefined) ? Number(rawLabor) : 15000
-          const lastDemand = engine2.raw.data.GetValue('B16', 'value')
-          const ld = (lastDemand !== null && lastDemand !== undefined) ? Number(lastDemand) : 1000
-          const shortage = Number(engine2.raw.data.GetValue('B17', 'value')) || 0
-          const wasteRate = Number(engine2.raw.data.GetValue('B18', 'value')) || 0
-          const conf = Math.max(0.6, Math.min(1.4, 1.0 + shortage * 0.5 - wasteRate * 0.5))
-          const fromDemand = Math.round(ld * conf)
-          if (area <= 0 || labor <= 0) { propose.set('value', 0, 7); return }
-          const baseFromArea = Math.floor(area * 25)
-          const baseFromLabor = Math.floor(labor / 5.0)
-          const baseline = Math.min(Math.min(baseFromArea, baseFromLabor), fromDemand)
-          const costBoost = Math.max(0, (2 - (src.state.value || 2)) * 200)
-          const effectiveCap = Math.floor(Math.min(baseFromArea, baseFromLabor) + costBoost)
-          propose.set('value', Math.min(effectiveCap, fromDemand), 7)
-        },
-      })
+        triggerKeys: ['value', 'value', 'value', 'value', 'value', 'value'],
+      } as any)
 
       // B3→B4: 规模效应
       engine2.raw.config.SetRule('B3', 'B4', 'value', {
         logic: ({ slot }: any) => Math.max(0.1, 2 - (slot.triggerTargets[0].value || 0) * 0.0002),
         triggerKeys: ['value'],
       } as any)
-
-      // B9人工→B3产能
-      engine2.raw.config.useEntangle({
-        cause: 'B9', impact: 'B3', via: ['value'],
-        emit: (src: any, tgt: any, propose: any) => {
-          const rawArea = engine2.raw.data.GetValue('B14', 'value')
-          const rawLabor = engine2.raw.data.GetValue('B9', 'value')
-          const area = (rawArea !== null && rawArea !== undefined) ? Number(rawArea) : 80
-          const labor = (rawLabor !== null && rawLabor !== undefined) ? Number(rawLabor) : 15000
-          if (area <= 0 || labor <= 0) { propose.set('value', 0, 8); return }
-          const resourceCap = Math.min(Math.floor(area * 25), Math.floor(labor / 5.0))
-          const lastDemand = engine2.raw.data.GetValue('B16', 'value')
-          const d = (lastDemand !== null && lastDemand !== undefined) ? Number(lastDemand) : 1000
-          const shortage = Number(engine2.raw.data.GetValue('B17', 'value')) || 0
-          const wasteRate = Number(engine2.raw.data.GetValue('B18', 'value')) || 0
-          const conf = Math.max(0.6, Math.min(1.4, 1.0 + shortage * 0.5 - wasteRate * 0.5))
-          propose.set('value', Math.min(resourceCap, Math.round(d * conf)), 8)
-        },
-      })
-      // B14面积→B3产能
-      engine2.raw.config.useEntangle({
-        cause: 'B14', impact: 'B3', via: ['value'],
-        emit: (src: any, tgt: any, propose: any) => {
-          const rawArea = engine2.raw.data.GetValue('B14', 'value')
-          const rawLabor = engine2.raw.data.GetValue('B9', 'value')
-          const area = (rawArea !== null && rawArea !== undefined) ? Number(rawArea) : 80
-          const labor = (rawLabor !== null && rawLabor !== undefined) ? Number(rawLabor) : 15000
-          if (area <= 0 || labor <= 0) { propose.set('value', 0, 8); return }
-          const resourceCap = Math.min(Math.floor(area * 25), Math.floor(labor / 5.0))
-          const lastDemand = engine2.raw.data.GetValue('B16', 'value')
-          const d = (lastDemand !== null && lastDemand !== undefined) ? Number(lastDemand) : 1000
-          const shortage = Number(engine2.raw.data.GetValue('B17', 'value')) || 0
-          const wasteRate = Number(engine2.raw.data.GetValue('B18', 'value')) || 0
-          const conf = Math.max(0.6, Math.min(1.4, 1.0 + shortage * 0.5 - wasteRate * 0.5))
-          propose.set('value', Math.min(resourceCap, Math.round(d * conf)), 8)
-        },
-      })
 
       // —— B21 员工满意度: 薪酬 vs 工作负荷 ——
       engine2.raw.config.SetRules(
@@ -603,8 +557,6 @@ onMounted(() => {
     engine2.raw.data.SilentSet('B14', 'formula', '')
     engine2.raw.data.SilentSet('B15', 'value', 5)
     engine2.raw.data.SilentSet('B15', 'formula', '')
-    engine2.raw.data.SilentSet('B16', 'value', 3600)
-    engine2.raw.data.SilentSet('B16', 'formula', '')
     engine2.raw.data.SilentSet('B17', 'value', 0)
     engine2.raw.data.SilentSet('B17', 'formula', '')
     engine2.raw.data.SilentSet('B18', 'value', 0)
@@ -627,7 +579,7 @@ onMounted(() => {
     engine.setCellValue('A13', '📢 营销投入(元/月)')
     engine.setCellValue('A14', '📐 店面面积(m²)')
     engine.setCellValue('A15', '⭐ 场地等级(1-10)')
-    engine.setCellValue('A16', '📜 上期需求')
+    engine.setCellValue('A16', '📜 上期需求(自洽)')
     engine.setCellValue('A17', '⚠️ 上期缺货率')
     engine.setCellValue('A18', '📦 上期报废率')
     engine.setCellValue('A19', '🌟 知名度(品牌)')
@@ -640,6 +592,15 @@ onMounted(() => {
     engine.setCellFormula('B8', '=B6-B7')
 
     engine2.raw.config.notifyAll()
+
+    // 自洽初始化: B16(上期需求) = B2(本期需求)
+    // 避免 B16=3600(拍脑袋) 导致首月产能虚高
+    const initialDemand = engine.getCellValue('B2')
+    const b2Val = (initialDemand !== null && initialDemand !== undefined) ? Number(initialDemand) : 400
+    engine2.raw.data.SilentSet('B16', 'value', Math.max(100, Math.round(b2Val)))
+    engine2.raw.data.SilentSet('B16', 'formula', '')
+    engine2.raw.config.notifyAll()  // 引擎重算 B3(使用自洽的 B16)
+
     ;(window as any).__engine = engine2
 
     const logger = useLogger({ focusPaths: ['B9', 'B3'] })

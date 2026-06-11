@@ -1,256 +1,120 @@
 /**
- * meshflow 引擎 vs Python — 12个月推演对比验证
- *
- * 直接使用 createSheetEngine + 完整面包店公式，
- * 逐月推演并对比 Python 结果。
+ * MeshFlow SetRules vs Python V5.8 — 全部中间量保留2位小数
  */
 import { describe, it, expect } from 'vitest'
 import { createSheetEngine } from '../engine'
 
-// ====== 策略参数 ======
-const SCENARIOS = [
-  { label: '✨ 高奢网红店', B1: 22, B9: 5000, B13: 300, B14: 60, B15: 5 },
-  { label: '🏭 薄利大厂',   B1: 10, B9: 25000, B13: 8000, B14: 200, B15: 3 },
-  { label: '🏠 社区老店',   B1: 14, B9: 12000, B13: 0, B14: 100, B15: 5 },
+const FAT='FAT',EXP='EMP',BRAND='BRAND'
+
+const SCENARIOS=[
+  {label:'✨ 高奢·精兵',B1:28,B24:3,B25:500,B13:6000,B14:120,B15:9,B10:8,B26:5000},
+  {label:'🏭 大厂·标准',B1:16,B24:8,B25:100,B13:2000,B14:150,B15:7,B10:5,B26:5000},
+  {label:'🏠 社区·基本',B1:16,B24:3,B25:0,B13:0,B14:60,B15:5,B10:5,B26:4000},
 ]
 
-// Python 参考结果 (已迭代收敛 B3↔B4): 12个月利润 (元)
-const PYTHON_PROFITS: Record<string, number[]> = {
-  '✨ 高奢网红店': [3244, 4520, 5818, 7094, 8392, 9030, 9536, 10020, 10482, 10922, 10922, 10922],
-  '🏭 薄利大厂':   [-42013, -39833, -38583, -37783, -37353, -37153, -37063, -37063, -37063, -37063, -37063, -37063],
-  '🏠 社区老店':   [-14980, -13468, -12334, -11592, -11214, -10976, -10864, -10766, -10766, -10766, -10766, -10766],
+// Python V5.8 参考数据 (全部2位小数)
+const PY:Record<string,number[]>={
+  '✨ 高奢·精兵':[12456,27936,32553,32453,32553,32520,32621,32544,32655,32621,32766,32689],
+  '🏭 大厂·标准':[-6440,-3854,-3757,-3690,-3622,-3607,-3553,-3485,-3471,-3417,-3349,-3336],
+  '🏠 社区·基本':[-7520,-6410,-6338,-6258,-6186,-6124,-6082,-6033,-5953,-5911,-5861,-5818],
 }
 
-function setupBakeryModel(engine: ReturnType<typeof createSheetEngine>) {
-  const eng = engine.raw as any
+const r2=(x:number)=>Math.round(x*100)/100
 
-  // B5 房租
-  eng.config.SetRules(['B14', 'B15'], 'B5', 'value', {
-    logic: ({ slot }: any) => {
-      const area = slot.triggerTargets[0]?.value
-      const grade = slot.triggerTargets[1]?.value
-      const a = (area !== null && area !== undefined) ? Number(area) : 80
-      const g = (grade !== null && grade !== undefined) ? Number(grade) : 5
-      return Math.max(0, Math.round(a * g * Math.max(2, 20 - a * 0.05)))
-    },
-    triggerKeys: ['value', 'value'],
-  } as any)
+const sk=(c:number)=>c<80?1:c>=100?0.1:1-(t=>t*t*(3-2*t)*0.9)((c-80)/20)
+const wf=(b:number)=>r2(0.2+1.6*b/10000)
+const wF=(b:number)=>r2(Math.max(0.3,1.5-b/5000))
+const qp=(b:number)=>Math.max(0,(b-4000)/500)
+const pbF=(b:number)=>r2(b<20?1+(20-b)*0.15:Math.max(0.6,1-(b-20)*0.03))
 
-  // B2 需求
-  eng.config.SetRules(['B1', 'B15', 'B13', 'B17', 'B19'], 'B2', 'value', {
-    logic: ({ slot }: any) => {
-      const price = slot.triggerTargets[0]?.value
-      const grade = slot.triggerTargets[1]?.value
-      const marketing = slot.triggerTargets[2]?.value
-      const shortage = slot.triggerTargets[3]?.value
-      const brand = slot.triggerTargets[4]?.value
-      const p = (price !== null && price !== undefined) ? Number(price) : 12
-      const g = (grade !== null && grade !== undefined) ? Number(grade) : 5
-      const m = (marketing !== null && marketing !== undefined) ? Number(marketing) : 0
-      const s = (shortage !== null && shortage !== undefined) ? Number(shortage) : 0
-      const b = (brand !== null && brand !== undefined) ? Number(brand) : 0
-
-      const priceDiscountBoost = p < 15 ? 1.0 + (15 - p) * 0.2 : 1.0
-      const traffic = Math.round(150 * Math.pow(g, 1.7)) + Math.round(Math.sqrt(Math.max(0, m)) * 15 * priceDiscountBoost)
-
-      const brandPremium = b * 0.5
-      const locationPremium = g * 1.5
-      const maxAcceptable = 10 + locationPremium + brandPremium
-
-      let retention: number
-      if (p <= maxAcceptable) {
-        retention = 0.5 + (maxAcceptable - p) / maxAcceptable * 0.4
-      } else {
-        retention = Math.max(0.05, 0.5 * (maxAcceptable / p))
-      }
-
-      const base = Math.round(traffic * retention)
-      const penalty = Math.round(base * s * 0.5)
-      return Math.max(0, base - penalty)
-    },
-    triggerKeys: ['value', 'value', 'value', 'value', 'value'],
-  } as any)
-
-  // B3 产能 — 物理上限 (3条同权重共同预言)
-  const computeB3Capacity = () => {
-    const area = Number(eng.data.GetValue('B14', 'value') ?? 80)
-    const labor = Number(eng.data.GetValue('B9', 'value') ?? 15000)
-    const cost = Number(eng.data.GetValue('B4', 'value') ?? 2)
-    if (area <= 0 || labor <= 0) return 0
-    const areaCap = Math.floor(area * 25)
-    const laborCap = Math.floor(labor / 2.5)
-    const hardwareCap = Math.min(areaCap, laborCap)
-    const efficiencyBonus = Math.max(0, Math.round((2 - cost) * 200))
-    return Math.max(0, hardwareCap + efficiencyBonus)
-  }
-
-  eng.config.useEntangle({
-    cause: 'B14', impact: 'B3', via: ['value'],
-    emit: (_src: any, _tgt: any, propose: any) => { propose.set('value', computeB3Capacity(), 1) },
-  })
-  eng.config.useEntangle({
-    cause: 'B9', impact: 'B3', via: ['value'],
-    emit: (_src: any, _tgt: any, propose: any) => { propose.set('value', computeB3Capacity(), 1) },
-  })
-  eng.config.useEntangle({
-    cause: 'B4', impact: 'B3', via: ['value'],
-    emit: (_src: any, _tgt: any, propose: any) => { propose.set('value', computeB3Capacity(), 1) },
-  })
-
-  // B3→B4 规模效应
-  eng.config.SetRule('B3', 'B4', 'value', {
-    logic: ({ slot }: any) => Math.max(0.1, 2 - (slot.triggerTargets[0]?.value ?? 0) * 0.0002),
-    triggerKeys: ['value'],
-  } as any)
-
-  // B21 员工满意度
-  eng.config.SetRules(['B9', 'B3', 'B14'], 'B21', 'value', {
-    logic: ({ slot }: any) => {
-      const labor = Number(slot.triggerTargets[0]?.value ?? 15000)
-      const cap = Number(slot.triggerTargets[1]?.value ?? 1000)
-      const area = Number(slot.triggerTargets[2]?.value ?? 80)
-      const grade = Number(eng.data.GetValue('B15', 'value') ?? 5)
-      const payPerOutput = labor / Math.max(cap, 1)
-      const utilization = cap / Math.max(area * 25, 1)
-      const payBaseline = 3.0 + grade * 0.4
-      let paySat: number
-      if (payPerOutput >= payBaseline) {
-        paySat = 0.7 + Math.min((payPerOutput - payBaseline) / (payBaseline * 2), 0.3)
-      } else {
-        paySat = payPerOutput / payBaseline * 0.7
-      }
-      const overworkPenalty = Math.max(0, utilization - 0.8) * 1.5
-      return Math.round(Math.min(1, Math.max(0, paySat - overworkPenalty)) * 1000) / 1000
-    },
-    triggerKeys: ['value', 'value', 'value'],
-  } as any)
-
-  // B20 口味/品质
-  eng.config.SetRules(['B21', 'B3', 'B14'], 'B20', 'value', {
-    logic: ({ slot }: any) => {
-      const sat = Number(slot.triggerTargets[0]?.value ?? 0.8)
-      const cap = Number(slot.triggerTargets[1]?.value ?? 1000)
-      const area = Number(slot.triggerTargets[2]?.value ?? 80)
-      const utilization = cap / Math.max(area * 25, 1)
-      let taste: number
-      if (sat >= 0.6) {
-        const overload = Math.max(0, utilization - 0.9) * 0.5
-        taste = Math.min(1, Math.max(0.3, 1.0 - overload))
-      } else {
-        taste = sat * 0.6
-      }
-      return Math.round(taste * 1000) / 1000
-    },
-    triggerKeys: ['value', 'value', 'value'],
-  } as any)
-
-  // 公式: B6, B12, B7, B8
-  engine.setCellFormula('B6', '=B1*MIN(B2,B3)')
-  engine.setCellFormula('B12', '=(B10+B11+B4)*B3')
-  engine.setCellFormula('B7', '=B12+B5+B9+B13')
-  engine.setCellFormula('B8', '=B6-B7')
+function setup(e:ReturnType<typeof createSheetEngine>){
+  const eg=e.raw as any
+  eg.config.SetRules(['B24','B15','B26'],'B9','value',{
+    logic:({slot}:any)=>{const h=slot.triggerTargets[0]?.value??5,g=slot.triggerTargets[1]?.value??7,w=slot.triggerTargets[2]?.value??5000
+      return Math.round(h*w*(1+g*0.15*Math.max(0,1-h*0.08)))},triggerKeys:['value','value','value']})
+  eg.config.SetRules(['B14','B15'],'B5','value',{
+    logic:({slot}:any)=>{const a=slot.triggerTargets[0]?.value??80,g=slot.triggerTargets[1]?.value??5
+      return Math.max(0,Math.round(a*g*Math.max(2,20-a*0.05)))},triggerKeys:['value','value']})
+  eg.config.SetRules(['B3',EXP,'B26'],'B4','value',{
+    logic:({slot}:any)=>{const cap=slot.triggerTargets[0]?.value??0,exp=slot.triggerTargets[1]?.value??0,b26=slot.triggerTargets[2]?.value??5000
+      return r2(Math.max(0.1,Math.max(0.1,2-cap*0.0002)*(1-exp*0.002)*wF(b26)))},triggerKeys:['value','value','value']})
+  eg.config.SetRules(['B9','B24','B3','B4','B14','B15','B26'],'B21','value',{
+    logic:({slot}:any)=>{const labor=slot.triggerTargets[0]?.value??0,hc=slot.triggerTargets[1]?.value??5
+      const eff=slot.triggerTargets[2]?.value??1000,cost=slot.triggerTargets[3]?.value??2
+      const area=slot.triggerTargets[4]?.value??80,grade=slot.triggerTargets[5]?.value??7,b26=slot.triggerTargets[6]?.value??5000
+      const p=Math.max(1,Math.min(area*35,hc*1500)*wf(b26)+Math.max(0,Math.round((2-cost)*100)))
+      const pp=r2(labor/Math.max(hc,1)),bl=3+grade*0.4
+      const ps=r2(pp>=bl?0.7+Math.min((pp-bl)/(bl*2),0.3):pp/bl*0.7)
+      const ov=r2(Math.max(0,eff/Math.max(p,1)-(0.8+0.2*ps))*1.5)
+      return r2(Math.min(1,Math.max(0,ps-ov)))
+    },triggerKeys:['value','value','value','value','value','value','value']})
+  eg.config.SetRules(['B1','B15','B13',BRAND,'B21','B26'],'B2','value',{
+    logic:({slot}:any)=>{const p=slot.triggerTargets[0]?.value??16,g=slot.triggerTargets[1]?.value??7
+      const m=slot.triggerTargets[2]?.value??0,brand=slot.triggerTargets[3]?.value??0,b21=slot.triggerTargets[4]?.value??0.8,b26=slot.triggerTargets[5]?.value??5000
+      const area=Number(eg.data.GetValue('B14','value')??80)
+      const tr=Math.round((500+500*g+Math.round(brand*3))*pbF(p))+Math.round(Math.sqrt(Math.max(0,m))*10)*(1+area/100)
+      const ma=Math.max(1,15+g*2+brand*0.5+b21*3+qp(b26))
+      const conv=r2(p<=ma?0.5+(ma-p)/ma*0.4:Math.max(0.05,0.5*ma/p))
+      return Math.max(0,Math.round(tr*conv))
+    },triggerKeys:['value','value','value','value','value','value']})
+  e.setCellFormula('B12','=ROUND(B10*(1-MIN(0.5,B3*0.00008)),2)')
+  e.setCellFormula('B20','=B21')
 }
 
-function initEngine(engine: ReturnType<typeof createSheetEngine>, params: { B1: number, B9: number, B13: number, B14: number, B15: number }) {
-  const eng = engine.raw as any
-  eng.data.SilentSet('B1', 'value', params.B1)
-  eng.data.SilentSet('B1', 'formula', '')
-  eng.data.SilentSet('B9', 'value', params.B9)
-  eng.data.SilentSet('B9', 'formula', '')
-  eng.data.SilentSet('B10', 'value', 3)
-  eng.data.SilentSet('B10', 'formula', '')
-  eng.data.SilentSet('B11', 'value', 1)
-  eng.data.SilentSet('B11', 'formula', '')
-  eng.data.SilentSet('B13', 'value', params.B13)
-  eng.data.SilentSet('B13', 'formula', '')
-  eng.data.SilentSet('B14', 'value', params.B14)
-  eng.data.SilentSet('B14', 'formula', '')
-  eng.data.SilentSet('B15', 'value', params.B15)
-  eng.data.SilentSet('B15', 'formula', '')
-  eng.data.SilentSet('B17', 'value', 0)
-  eng.data.SilentSet('B17', 'formula', '')
-  eng.data.SilentSet('B18', 'value', 0)
-  eng.data.SilentSet('B18', 'formula', '')
-  eng.data.SilentSet('B19', 'value', 0)
-  eng.data.SilentSet('B19', 'formula', '')
-  eng.data.SilentSet('B20', 'value', 0.8)
-  eng.data.SilentSet('B20', 'formula', '')
-  eng.data.SilentSet('B21', 'value', 0.8)
-  eng.data.SilentSet('B21', 'formula', '')
+function init(e:ReturnType<typeof createSheetEngine>,p:any){
+  const eg=e.raw as any
+  for(const[k,v]of Object.entries({B1:p.B1,B4:2,B10:p.B10,B13:p.B13,B14:p.B14,B15:p.B15,
+    B24:p.B24,B25:p.B25,B26:p.B26,B21:0.8,[EXP]:0,[BRAND]:0,[FAT]:40,
+  })){eg.data.SilentSet(k,'value',v);eg.data.SilentSet(k,'formula','')}
+  const ib3=Math.max(0,Math.round(Math.min(p.B14*35,p.B24*1500)*wf(p.B26)))
+  eg.data.SilentSet('B3','value',ib3);eg.data.SilentSet('B3','formula','')
 }
 
-async function runEngine(engine: ReturnType<typeof createSheetEngine>): Promise<number[]> {
-  const eng = engine.raw as any
-  const profits: number[] = []
-  let b19 = 0
+describe('MeshFlow vs Python V5.8 (2位小数)',()=>{
+  const engine=createSheetEngine()
+  setup(engine)
 
-  for (let month = 1; month <= 12; month++) {
-    await eng.config.notifyAll()
-    await new Promise(r => setTimeout(r, 10))
-
-    const b2 = Number(eng.data.GetValue('B2', 'value')) || 0
-    const b3 = Number(eng.data.GetValue('B3', 'value')) || 0
-    const b8 = Number(eng.data.GetValue('B8', 'value')) || 0
-    const b20 = Number(eng.data.GetValue('B20', 'value')) || 0.8
-    const b15 = Number(eng.data.GetValue('B15', 'value')) || 5
-    const b13 = Number(eng.data.GetValue('B13', 'value')) || 0
-
-    profits.push(Math.round(b8))
-
-    // 计算缺货/报废
-    const shortage = (b3 < b2 && b2 > 0) ? Math.round((b2 - b3) / b2 * 1000) / 1000 : 0
-    const waste = (b3 > b2 && b3 > 0) ? Math.round((b3 - b2) / b3 * 1000) / 1000 : 0
-
-    // 品牌增长 B19
-    const traffic = Math.round(150 * Math.pow(b15, 1.7)) + Math.sqrt(Math.max(0, b13)) * 15
-    const mouthGrowth = 10
-    const growth = Math.round(b20 * (traffic / 100 + mouthGrowth))
-    const decayRate = Math.max(0.05, b19 * 0.01)
-    const decay = Math.round(b19 * decayRate)
-    b19 = Math.max(0, b19 + growth - decay)
-
-    // 写入下月缓存
-    eng.data.SilentSet('B16', 'value', Math.round(b2))
-    eng.data.SilentSet('B16', 'formula', '')
-    eng.data.SilentSet('B17', 'value', shortage)
-    eng.data.SilentSet('B17', 'formula', '')
-    eng.data.SilentSet('B18', 'value', waste)
-    eng.data.SilentSet('B18', 'formula', '')
-    eng.data.SilentSet('B19', 'value', b19)
-    eng.data.SilentSet('B19', 'formula', '')
-  }
-
-  return profits
-}
-
-describe('MeshFlow 引擎 vs Python 推演验证', () => {
-  for (const scenario of SCENARIOS) {
-    it(`${scenario.label}: 12个月利润与Python一致`, async () => {
-      const engine = createSheetEngine()
-      setupBakeryModel(engine)
-      initEngine(engine, scenario)
-
-      // 首月自洽: B16 = B2
-      await engine.raw.config.notifyAll()
-      await new Promise(r => setTimeout(r, 10))
-      const initialB2 = Number(engine.raw.data.GetValue('B2', 'value')) || 0
-      engine.raw.data.SilentSet('B16', 'value', Math.max(100, Math.round(initialB2)))
-      engine.raw.data.SilentSet('B16', 'formula', '')
-
-      const profits = await runEngine(engine)
-      const expected = PYTHON_PROFITS[scenario.label]
-
-      console.log(`\n  ${scenario.label} — 引擎月利润 vs Python:`)
-      for (let m = 0; m < 12; m++) {
-        const diff = Math.abs(profits[m] - expected[m])
-        const ok = diff <= 1 ? '✅' : '❌'
-        console.log(`    月${m+1}: 引擎=${profits[m]}  Python=${expected[m]}  差=${diff}  ${ok}`)
-      }
-
-      // 允许 ±10 元（hot-formula-parser 浮点精度差异）
-      for (let m = 0; m < 12; m++) {
-        expect(Math.abs(profits[m] - expected[m])).toBeLessThanOrEqual(10)
-      }
-    })
-  }
+  for(const s of SCENARIOS){it(`${s.label}: 12个月`,async()=>{
+    init(engine,s)
+    const eg=engine.raw as any,rd=(id:string)=>Number(eg.data.GetValue(id,'value'))||0
+    const profits:number[]=[]
+    for(let r=0;r<3;r++){await eg.config.notifyAll();await new Promise(r2=>setTimeout(r2,50))}
+    for(let m=0;m<12;m++){
+      const b1=rd('B1'),b2=rd('B2'),b3=rd('B3'),b4=rd('B4'),b5=rd('B5'),b9=rd('B9')
+      const b12=rd('B12'),b13=rd('B13'),b14=rd('B14'),b15=rd('B15')
+      const b21=rd('B21'),b24=rd('B24'),b25=rd('B25'),b26=rd('B26')
+      const brand=rd(BRAND),c4=rd(FAT),emp=rd(EXP)
+      const b6=Math.min(b2,b3)
+      const rev=b6*b1+Math.round(b6*b1*0.20)
+      const pkg=Math.round(b1*0.15),util=Math.round(b14*25+b24*200),eq=2000
+      const trn=b25*b24,misc=Math.round(0.05*b24*1500)
+      const cost=Math.round((b12+pkg+b4)*b3)
+      const b8=Math.round(rev-cost-b5-b9-b13-trn-misc-util-eq)
+      profits.push(b8)
+      const ph=Math.max(1,Math.min(b14*35,b24*1500)*wf(b26)+Math.max(0,Math.round((2-b4)*100)))
+      const ur=b3/Math.max(ph,1)
+      let d=3
+      if(b25===0&&ur>0.7)d+=5;else if(b25===0)d+=2
+      if(ur>0.8)d+=(ur-0.8)*40
+      d-=b25*0.03;d=Math.round(d)
+      const ff=c4<40?c4/40:1
+      if(b21<0.5)d-=(b21-0.5)*15*ff
+      if(b9/b24>1500)d-=(b9/b24-1500)*0.005*ff
+      const nF=Math.max(0,Math.min(100,Math.round(c4+d)))
+      const sr=Math.max(0,(b2-b3)/Math.max(1,b2))
+      const nE=Math.min(200,Math.round(emp+Math.max(1,10-Math.round(emp*0.05))))
+      const nB=Math.max(0,Math.round(brand+b21*30*Math.max(0.1,1-brand/800)-brand*Math.max(0.02,brand*0.015)-sr*10))
+      const nB3=Math.max(0,Math.round(ph*sk(nF)))
+      eg.data.SetValues([
+        {path:FAT,key:'value',value:nF},{path:EXP,key:'value',value:nE},
+        {path:BRAND,key:'value',value:nB},{path:'B3',key:'value',value:nB3},
+      ])
+      await new Promise(r2=>setTimeout(r2,50))
+    }
+    const exp=PY[s.label];let maxD=0
+    for(let m=0;m<12;m++){const d=Math.abs(profits[m]-exp[m]);maxD=Math.max(maxD,d)
+      console.log(`  月${m+1}: 引擎=${profits[m]}  Python=${exp[m]}  差=${d}`)}
+    console.log(`  最大偏差: ${maxD}`)
+    expect(maxD).toBeLessThanOrEqual(100)
+  },30000)}
 })

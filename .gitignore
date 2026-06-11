@@ -3,3 +3,11 @@ dist/
 *.local
 .DS_Store
 *.log
+__pycache__/
+*.pyc
+*.pyo
+*.pdf
+*.html
+bruteforce_results.json
+python_ref_new.json
+python_ref_output.json

@@ -1,782 +1,189 @@
 <template>
-  <div class="app">
-    <header class="toolbar">
-      <div class="toolbar-left">
-        <h1>⚡ MeshFlow 引擎演示</h1>
-        <div class="view-switcher">
-          <button
-            class="btn btn-sm"
-            :class="{ active: currentView === 'graph' }"
-            @click="switchView('graph')"
-          >🌐 关系图</button>
-          <button
-            class="btn btn-sm"
-            :class="{ active: currentView === 'sheet' }"
-            @click="switchView('sheet')"
-          >📊 表格</button>
-        </div>
-        <button class="btn btn-sm" @click="loadBakeryDemo">🥖 面包店</button>
-        <button v-if="currentView === 'sheet'" class="btn btn-sm" @click="exportCSV">📥 CSV</button>
-      </div>
-    </header>
+  <n-config-provider :theme="darkTheme" :theme-overrides="themeOverrides" :locale="zhCN" :date-locale="dateZhCN">
+    <div class="app">
+      <button class="guide-btn" @click="guideOpen = true">📖</button>
+      <n-modal v-model:show="guideOpen" preset="card" :title="'🥖 面包店沙盘 · V8 推演指南'" style="max-width: 800px; width: 90vw" :segmented="false">
+        <SimulationGuide />
+      </n-modal>
 
-    <!-- 关系图视图 -->
-    <div v-if="currentView === 'graph'" class="graph-view">
-      <GraphEditor :engine="engine" />
+      <div class="main-layout">
+        <!-- 左侧: 指挥台 (200px) -->
+        <aside class="left-panel">
+          <BakerySandbox ref="sandboxRef" :engine="engine" :selected-node="selectedNodeId" @clear-node="selectedNodeId = ''" @select-node="selectedNodeId = $event" />
+        </aside>
+
+        <!-- 中间: 推演主舞台 -->
+        <main class="middle-panel">
+          <!-- 右上: 利润走势图 (fixed 230px) -->
+          <div class="chart-area">
+            <TrendChart
+              :history="sandboxRef?.monthLog ?? []"
+              :current-profit="sandboxRef?.p ?? 0"
+            />
+          </div>
+          <!-- 右下: DAG 拓扑图 -->
+          <div class="graph-area">
+            <GraphEditor :engine="engine" :simple="true" @node-selected="selectedNodeId = $event" />
+          </div>
+        </main>
+
+        <!-- 右侧: 日志面板 -->
+        <aside class="log-panel-wrap">
+          <LogPanel :logs="sandboxRef?.logEntries ?? []" />
+        </aside>
+      </div>
     </div>
-
-    <!-- 表格视图 (纯 HTML table, 无重量级组件) -->
-    <template v-if="currentView === 'sheet'">
-      <div class="formula-bar">
-        <span class="cell-ref">{{ selectedCell || '—' }}</span>
-        <input
-          v-model="formulaInput"
-          class="formula-input"
-          placeholder="输入公式 如 =A1+B1 或 =SUM(A1:A5)"
-          @keydown.enter.prevent="applyFormula"
-          @keydown.escape="formulaInput = ''"
-        />
-        <span v-if="showFormulaPreview" class="formula-preview">{{ showFormulaPreview }}</span>
-      </div>
-
-      <div class="grid-wrap">
-        <div class="grid-scroll">
-          <table class="mesh-table">
-            <thead>
-              <tr>
-                <th class="rn"></th>
-                <th v-for="(col, ci) in visibleCols" :key="'h'+ci" class="col-head">{{ col }}</th>
-              </tr>
-            </thead>
-            <tbody>
-              <tr v-for="(row, ri) in tableRows" :key="'r'+ri">
-                <td class="rn">{{ ri + 1 }}</td>
-                <td
-                  v-for="(val, ci) in row"
-                  :key="'c'+ci"
-                  class="cell"
-                  :class="{ 'cell-selected': selectedCell === colName(ci) + (ri + 1) }"
-                  @click="selectCell(colName(ci) + (ri + 1))"
-                >{{ formatVal(val) }}</td>
-              </tr>
-            </tbody>
-          </table>
-        </div>
-      </div>
-    </template>
-
-    <footer class="status-bar">
-      <span v-if="selectedCell && currentView === 'sheet'">
-        <strong>{{ selectedCell }}</strong>：
-        {{ cellInfo }}
-      </span>
-      <span v-else-if="currentView === 'graph'">🌐 点击节点查看规则链路</span>
-      <span v-else>点击单元格 · 公式栏输入 = 开头</span>
-      <span class="status-right">
-        <span v-if="convergenceStatus" class="converge-badge">{{ convergenceStatus }}</span>
-        {{ lastSaved }}
-      </span>
-    </footer>
-  </div>
+  </n-config-provider>
 </template>
 
 <script setup lang="ts">
-import { ref, computed, onMounted } from 'vue'
-import { createSheetEngine, type CellId } from './engine'
+import { ref, onMounted } from 'vue'
+import { NConfigProvider, NModal, darkTheme, zhCN, dateZhCN } from 'naive-ui'
+import type { GlobalThemeOverrides } from 'naive-ui'
+import { createSheetEngine } from './engine'
 import { useLogger } from '@meshflow/logger'
 import GraphEditor from './GraphEditor.vue'
-
-const COLS = 10
-const ROWS = 20
-const COL_NAMES = 'ABCDEFGHIJ'
+import BakerySandbox from './components/BakerySandbox.vue'
+import TrendChart from './components/TrendChart.vue'
+import SimulationGuide from './components/SimulationGuide.vue'
+import LogPanel from './components/LogPanel.vue'
 
 const engine = createSheetEngine()
-const currentView = ref<'graph' | 'sheet'>('graph')
-const selectedCell = ref<CellId>('')
-const formulaInput = ref('')
-const lastSaved = ref('')
-const convergenceStatus = ref('')
-const visibleCols = ref(COL_NAMES.split('').slice(0, COLS))
+const guideOpen = ref(false)
+const sandboxRef = ref<InstanceType<typeof BakerySandbox>>()
+const selectedNodeId = ref('')
 let entangleReady = false
 
-function colName(i: number): string { return COL_NAMES[i] }
-
-// ======== 纯表格数据 ========
-
-const tableRows = computed(() => {
-  const rows: any[][] = []
-  for (let r = 1; r <= ROWS; r++) {
-    const row: any[] = []
-    for (let c = 0; c < COLS; c++) {
-      row.push(engine.getCellValue(`${colName(c)}${r}` as CellId))
-    }
-    rows.push(row)
-  }
-  return rows
-})
-
-function formatVal(v: any): string {
-  if (v === null || v === undefined || v === '') return ''
-  const n = Number(v)
-  if (!isNaN(n)) {
-    if (Number.isInteger(n)) return n.toLocaleString()
-    if (Math.abs(n) < 0.01) return n.toFixed(4)
-    return n.toFixed(2)
-  }
-  return String(v)
-}
-
-const cellInfo = computed(() => {
-  if (!selectedCell.value) return ''
-  const f = engine.getCellFormula(selectedCell.value)
-  if (f) return f
-  const v = engine.getCellValue(selectedCell.value)
-  return v !== '' && v !== null ? String(v) : '(空)'
-})
-
-const showFormulaPreview = computed(() => {
-  if (!selectedCell.value) return ''
-  return engine.getCellFormula(selectedCell.value) || ''
-})
-
-// ======== 单元格选择 ========
-
-function selectCell(id: string) {
-  selectedCell.value = id as CellId
-  formulaInput.value = engine.getCellFormula(id as CellId) || ''
-}
-
-// ======== 公式栏 ========
-
-function applyFormula() {
-  if (!selectedCell.value) return
-  engine.setCellFormula(selectedCell.value, formulaInput.value)
-  if (!formulaInput.value.startsWith('=')) {
-    engine.setCellValue(selectedCell.value, formulaInput.value)
-  }
-
-  // 纠缠推演: 改 B1 触发收敛
-  if (entangleReady && selectedCell.value === 'B1') {
-    const newVal = parseFloat(formulaInput.value)
-    if (!isNaN(newVal)) {
-      for (let r = 6; r <= 30; r++) {
-        engine.setCellValue(`A${r}`, '')
-        engine.setCellValue(`B${r}`, '')
-        engine.setCellValue(`C${r}`, '')
-        engine.setCellValue(`D${r}`, '')
-        engine.setCellValue(`E${r}`, '')
-        engine.setCellValue(`F${r}`, '')
-        engine.setCellValue(`G${r}`, '')
-      }
-      const trace = computeConvergenceTrace(newVal)
-      displayConvergenceTrace(trace, 6)
-      convergenceStatus.value = '🌀 收敛中...'
-      setTimeout(() => { convergenceStatus.value = '✅ 已收敛' }, 100)
-    }
-  }
-}
-
-// ======== CSV 导出 ========
-
-function exportCSV() {
-  const lines: string[] = []
-  const headers: string[] = ['']
-  for (let c = 0; c < COLS; c++) headers.push(COL_NAMES[c])
-  lines.push(headers.join(','))
-
-  for (let r = 1; r <= ROWS; r++) {
-    const cells: string[] = [String(r)]
-    for (let c = 0; c < COLS; c++) {
-      const id = `${COL_NAMES[c]}${r}` as CellId
-      let val = engine.getCellValue(id)
-      if (val === null || val === undefined) val = ''
-      const s = String(val).replace(/"/g, '""')
-      cells.push(s.includes(',') || s.includes('"') ? `"${s}"` : s)
-    }
-    lines.push(cells.join(','))
-  }
-
-  const blob = new Blob(['\uFEFF' + lines.join('\n')], { type: 'text/csv;charset=utf-8' })
-  const url = URL.createObjectURL(blob)
-  const a = document.createElement('a')
-  a.href = url
-  a.download = `meshflow-sheet-${new Date().toISOString().slice(0, 10)}.csv`
-  a.click()
-  URL.revokeObjectURL(url)
-}
-
-// ======== 面包店演示数据 ========
-
-function loadBakeryDemo() {
-  engine.clearAll()
-
-  engine.setCellValue('A1', '📝 面包售价(元)')
-  engine.setCellValue('B1', '15')
-  engine.setCellValue('A2', '📝 日均销量')
-  engine.setCellValue('B2', '200')
-  engine.setCellValue('A3', '📝 月营业天数')
-  engine.setCellValue('B3', '26')
-  engine.setCellValue('A5', '📝 面粉成本(元/个)')
-  engine.setCellValue('B5', '5')
-  engine.setCellValue('A6', '📝 其他成本(元/个)')
-  engine.setCellValue('B6', '2')
-  engine.setCellValue('A8', '📝 月房租')
-  engine.setCellValue('B8', '8000')
-  engine.setCellValue('A9', '📝 月人工费')
-  engine.setCellValue('B9', '12000')
-  engine.setCellValue('A10', '📝 月水电杂费')
-  engine.setCellValue('B10', '3000')
-
-  engine.setCellValue('A12', '✅ 单位成本')
-  engine.setCellFormula('B12', '=B5+B6')
-  engine.setCellValue('A13', '✅ 月收入')
-  engine.setCellFormula('B13', '=B1*B2*B3')
-  engine.setCellValue('A14', '✅ 月固定成本')
-  engine.setCellFormula('B14', '=B8+B9+B10')
-  engine.setCellValue('A15', '✅ 月利润')
-  engine.setCellFormula('B15', '=B13-(B12*B2*B3+B14)')
-
-  formulaInput.value = ''
-  selectedCell.value = ''
-  lastSaved.value = '💡 修改B1~B3试试，结果自动更新！'
-  convergenceStatus.value = ''
-  visibleCols.value = COL_NAMES.split('').slice(0, COLS)
-}
-
-// ======== 收敛轨迹 ========
-
-function computeConvergenceTrace(initialPrice: number) {
-  let p = initialPrice, d = 0, cap = 0, co = 0
-  const trace: { epoch: number; price: number; demand: number; capacity: number; cost: number; note: string }[] = []
-  trace.push({ epoch: 0, price: p, demand: NaN, capacity: NaN, cost: NaN, note: `用户设定价格=${p}` })
-
-  for (let epoch = 1; epoch <= 25; epoch++) {
-    d = Math.max(0, 100 - p * 4)
-    cap = Math.max(0, d * 0.7)
-    co = Math.max(1, 2 + cap * 0.1)
-    const pFromCost = Math.max(1, co * 2 + 1)
-
-    trace.push({
-      epoch, price: Math.round(p * 100) / 100,
-      demand: Math.round(d * 100) / 100,
-      capacity: Math.round(cap * 100) / 100,
-      cost: Math.round(co * 100) / 100,
-      note: epoch === 1
-        ? `用户价${initialPrice}→需求${Math.round(d)}→产能${Math.round(cap)}→成本${Math.round(co)}→新价格${Math.round(pFromCost)}`
-        : `B4→B1反馈: 成本${Math.round(co)}→价格${Math.round(pFromCost)}`,
-    })
-
-    if (Math.abs(pFromCost - p) < 0.05 && epoch > 3) {
-      trace[trace.length - 1].note = `✅ 已收敛! 价格=${Math.round(p * 100) / 100}`
-      break
-    }
-    p = pFromCost
-  }
-  return trace
-}
-
-function displayConvergenceTrace(trace: any[], offsetRow: number) {
-  engine.setCellValue(`A${offsetRow}`, '📜 收敛轨迹')
-  engine.setCellValue(`B${offsetRow}`, '轮次')
-  engine.setCellValue(`C${offsetRow}`, '价格')
-  engine.setCellValue(`D${offsetRow}`, '需求')
-  engine.setCellValue(`E${offsetRow}`, '产能')
-  engine.setCellValue(`F${offsetRow}`, '成本')
-  engine.setCellValue(`G${offsetRow}`, '变化量')
-
-  for (let i = 0; i < trace.length && i < 25; i++) {
-    const r = offsetRow + 1 + i
-    const t = trace[i]
-    engine.setCellValue(`A${r}`, i === 0 ? '⚡触发' : `第${t.epoch}轮`)
-    engine.setCellValue(`B${r}`, t.epoch)
-    engine.setCellValue(`C${r}`, isNaN(t.price) ? '—' : t.price)
-    engine.setCellValue(`D${r}`, isNaN(t.demand) ? '—' : t.demand)
-    engine.setCellValue(`E${r}`, isNaN(t.capacity) ? '—' : t.capacity)
-    engine.setCellValue(`F${r}`, isNaN(t.cost) ? '—' : t.cost)
-    if (i === 0) {
-      engine.setCellValue(`G${r}`, '—')
-    } else {
-      let delta = 0
-      if (!isNaN(t.price) && !isNaN(trace[i - 1].price)) delta += Math.abs(t.price - trace[i - 1].price)
-      if (!isNaN(t.demand) && !isNaN(trace[i - 1].demand)) delta += Math.abs(t.demand - trace[i - 1].demand)
-      if (!isNaN(t.capacity) && !isNaN(trace[i - 1].capacity)) delta += Math.abs(t.capacity - trace[i - 1].capacity)
-      if (!isNaN(t.cost) && !isNaN(trace[i - 1].cost)) delta += Math.abs(t.cost - trace[i - 1].cost)
-      engine.setCellValue(`G${r}`, delta < 0.001 ? '✅ 收敛' : delta.toFixed(2))
-    }
-  }
-}
-
-// ======== 纠缠推演演示 ========
-
-function loadEntangleDemo() {
-  engine.clearAll()
-  formulaInput.value = ''
-  selectedCell.value = ''
-  convergenceStatus.value = '🌀 收敛中...'
-  visibleCols.value = ['', '值', '', '', '', '', '', '']
-
-  if (!entangleReady) {
-    engine.raw.config.useEntangle({
-      cause: 'B1', impact: 'B2', via: ['value'],
-      emit: (src: any, tgt: any, propose: any) => {
-        propose.set('value', Math.max(0, 150 - (src.state.value || 0) * 8), 5)
-      },
-    })
-    engine.raw.config.useEntangle({
-      cause: 'B2', impact: 'B3', via: ['value'],
-      emit: (src: any, tgt: any, propose: any) => {
-        propose.set('value', Math.max(0, (src.state.value || 0) * 0.6), 5)
-      },
-    })
-    engine.raw.config.useEntangle({
-      cause: 'B3', impact: 'B1', via: ['value'],
-      emit: (src: any, tgt: any, propose: any) => {
-        propose.set('value', Math.max(1, 5 + (src.state.value || 0) * 0.15), 5)
-      },
-    })
-    engine.raw.config.useEntangle({
-      cause: 'B3', impact: 'B4', via: ['value'],
-      emit: (src: any, tgt: any, propose: any) => {
-        propose.set('value', Math.max(1, 3 + (src.state.value || 0) * 0.08), 5)
-      },
-    })
-    engine.raw.config.useEntangle({
-      cause: 'B4', impact: 'B1', via: ['value'],
-      emit: (src: any, tgt: any, propose: any) => {
-        propose.set('value', Math.max(1, (src.state.value || 0) * 2 + 1), 2)
-      },
-    })
-    entangleReady = true
-  }
-
-  engine.setCellValue('A1', '💰 价格')
-  engine.setCellValue('C1', '←产能(权5)+成本(权2)')
-  engine.setCellValue('D1', '→需求')
-  engine.setCellValue('E1', '↺')
-  engine.setCellValue('A2', '📊 需求')
-  engine.setCellValue('C2', '←价格')
-  engine.setCellValue('D2', '→产能')
-  engine.setCellValue('E2', '↺')
-  engine.setCellValue('A3', '🏭 产能')
-  engine.setCellValue('C3', '←需求')
-  engine.setCellValue('D3', '→成本,→价格')
-  engine.setCellValue('E3', '↺')
-  engine.setCellValue('A4', '💸 成本')
-  engine.setCellValue('C4', '←产能')
-  engine.setCellValue('E4', '↺')
-
-  const initialPrice = 10
-  const trace = computeConvergenceTrace(initialPrice)
-  displayConvergenceTrace(trace, 6)
-  const lastRow = 6 + trace.length + 1
-  engine.setCellValue(`A${lastRow}`, '⚡ 改 B1(价格) → 全系统震荡收敛')
-  lastSaved.value = '🌀 改B1 → 震荡收敛！'
-
-  engine.raw.data.SetValue('B1', 'value', initialPrice)
-  setTimeout(() => {
-    convergenceStatus.value = '✅ 已收敛'
-  }, 100)
-}
-
-// ======== 视图切换 ========
-
-function switchView(view: 'graph' | 'sheet') {
-  currentView.value = view
-  if (view === 'sheet') {
-    loadBakeryDemo()
-  }
-}
-
-// ======== 初始化 ========
-
 onMounted(() => {
-  try {
-    const engine2 = engine as any
-    if (!entangleReady) {
-      // 房租: B14面积 × B15等级 × 20
-      engine2.raw.config.SetRules(
-        ['B14', 'B15'], 'B5', 'value', {
-        logic: ({ slot }: any) => {
-          const area = slot.triggerTargets[0]?.value
-          const grade = slot.triggerTargets[1]?.value
-          const a = (area !== null && area !== undefined) ? Number(area) : 80
-          const g = (grade !== null && grade !== undefined) ? Number(grade) : 5
-          return Math.max(0, Math.round(a * g * Math.max(2, 20 - a * 0.05)))
-        },
-        triggerKeys: ['value', 'value'],
-      } as any)
-
-      // —— 需求 B2 = 流量 × 留存率 (品牌知名度决定价格容忍度) ——
-      engine2.raw.config.SetRules(
-        ['B1', 'B15', 'B13', 'B17', 'B19'], 'B2', 'value', {
-        logic: ({ slot }: any) => {
-          const price = slot.triggerTargets[0]?.value
-          const grade = slot.triggerTargets[1]?.value
-          const marketing = slot.triggerTargets[2]?.value
-          const shortage = slot.triggerTargets[3]?.value
-          const brand = slot.triggerTargets[4]?.value
-          const p = (price !== null && price !== undefined) ? Number(price) : 12
-          const g = (grade !== null && grade !== undefined) ? Number(grade) : 5
-          const m = (marketing !== null && marketing !== undefined) ? Number(marketing) : 0
-          const s = (shortage !== null && shortage !== undefined) ? Number(shortage) : 0
-          const b = (brand !== null && brand !== undefined) ? Number(brand) : 0
-
-          // 流量 = 地段指数(等级^1.7) + 营销√效应 × 低价加成
-          // 顶级地段(10级)流量是偏远(1级)的50倍，符合幂律分布
-          // 低价营销加成: 售价<¥15时广告效果倍增, 如¥10时效果×2
-          const priceDiscountBoost = p < 15 ? 1.0 + (15 - p) * 0.2 : 1.0
-          const traffic = Math.round(150 * Math.pow(g, 1.7)) + Math.round(Math.sqrt(Math.max(0, m)) * 15 * priceDiscountBoost)
-
-          // 品牌溢价: 每点知名度 +¥0.5 价格容忍度
-          const brandPremium = b * 0.5
-          // 地段溢价: 高级地段顾客天然接受更高价格
-          const locationPremium = g * 1.5
-          const maxAcceptable = 10 + locationPremium + brandPremium
-
-          // 留存率: 价格 vs 品牌溢价能力
-          let retention: number
-          if (p <= maxAcceptable) {
-            retention = 0.5 + (maxAcceptable - p) / maxAcceptable * 0.4
-          } else {
-            retention = Math.max(0.05, 0.5 * (maxAcceptable / p))
-          }
-
-          const base = Math.round(traffic * retention)
-          const penalty = Math.round(base * s * 0.5)
-          return Math.max(0, base - penalty)
-        },
-        triggerKeys: ['value', 'value', 'value', 'value', 'value'],
-      } as any)
-
-      // —— B3 产能: 6条同权重共同预言 (B16/B4/B9/B14/B17/B18 → B3, 权重1) ——
-      //
-      // 【设计模式: 同权重共同预言 (Same-Weight Combined Prophecy)】
-      // 当多个因素（面积、人工、上期需求、加工成本、缺货率、报废率）共同决定一个节点(B3)时，
-      // 不能用不同权重（权10/8/7），因为重仲裁会让低权重提案被丢弃。
-      // 也不能只用一个 SetRule（虽然数学正确），但 SetRule 只能被 triggerKeys 的变化触发，
-      // 无法响应被 GetValue 读取但不属于 triggerKeys 的输入变化。
-      //
-      // 方案：每条纠缠各自注册 cause，用 propose.set('value', 全量计算结果, 1) 提交同权提案。
-      // Ghost Resolution 第一趟（Pass 1）扫描 find highest-weight set:
-      //   if (weight >= bestSetWeight) → bestSetVal = p.value  // 同权替换
-      // 最后一个在 _ghostBuffer 中的提案胜出，但因为所有提案都基于 GetValue 读取当前已结算值，
-      // 计算结果一致，谁胜出不重要。
-      //
-      // 优点:
-      //   1. 每个 cause 独立触发 → 改面积(B14)不依赖 B16 是否变化
-      //   2. 所有输入都参与计算（非只读 triggerKeys 触发）
-      //   3. 不涉及权重竞争，同权重下算术意义上公平
-      //   4. 纯 GetValue 读值，不额外注册 Rule → 不产生额外拓扑边
-      //
-      // PITFALL: 如果公式中有副作用或非确定性逻辑（如 random()），同权重会竞态。
-      // 本模型全为确定性计算，安全。
-      //
-      const computeB3Capacity = () => {
-        const rawArea = engine2.raw.data.GetValue('B14', 'value')
-        const rawLabor = engine2.raw.data.GetValue('B9', 'value')
-        const rawCost = engine2.raw.data.GetValue('B4', 'value')
-        const area = (rawArea !== null && rawArea !== undefined) ? Number(rawArea) : 80
-        const labor = (rawLabor !== null && rawLabor !== undefined) ? Number(rawLabor) : 15000
-        const cost = (rawCost !== null && rawCost !== undefined) ? Number(rawCost) : 2
-        if (area <= 0 || labor <= 0) return 0
-        const areaCap = Math.floor(area * 25)
-        const laborCap = Math.floor(labor / 2.5)
-        const hardwareCap = Math.min(areaCap, laborCap)
-        // 效率红利: 加工成本低 < ¥2 → 同等资源下多产出
-        const efficiencyBonus = Math.max(0, Math.round((2 - cost) * 200))
-        // B3 = 物理产能上限，不含需求约束
-        // 需求约束由 B6 = B1×MIN(B2,B3) 处理
-        return Math.max(0, hardwareCap + efficiencyBonus)
-      }
-
-      // 物理产能 B3 由三条纠缠共同预言：面积、人工、加工成本效率
-      // 改面积→B3涨，改人工→B3涨，成本低→效率红利涨
-      // 注: B2(需求)不约束B3, 供需差异通过 B6=售价×MIN(B2,B3) 和 B18(报废率) 体现
-
-      // B14面积→B3
-      engine2.raw.config.useEntangle({
-        cause: 'B14', impact: 'B3', via: ['value'],
-        emit: (_src: any, _tgt: any, propose: any) => {
-          propose.set('value', computeB3Capacity(), 1)
-        },
-      })
-      // B9人工→B3
-      engine2.raw.config.useEntangle({
-        cause: 'B9', impact: 'B3', via: ['value'],
-        emit: (_src: any, _tgt: any, propose: any) => {
-          propose.set('value', computeB3Capacity(), 1)
-        },
-      })
-      // B4加工成本→B3 (成本低→效率红利上浮产能)
-      engine2.raw.config.useEntangle({
-        cause: 'B4', impact: 'B3', via: ['value'],
-        emit: (_src: any, _tgt: any, propose: any) => {
-          propose.set('value', computeB3Capacity(), 1)
-        },
-      })
-
-      // B3→B4: 规模效应
-      engine2.raw.config.SetRule('B3', 'B4', 'value', {
-        logic: ({ slot }: any) => Math.max(0.1, 2 - (slot.triggerTargets[0].value || 0) * 0.0002),
-        triggerKeys: ['value'],
-      } as any)
-
-      // —— B21 员工满意度: 薪酬 vs 工作负荷 ——
-      engine2.raw.config.SetRules(
-        ['B9', 'B3', 'B14'], 'B21', 'value', {
-        logic: ({ slot }: any) => {
-          const rawLabor = slot.triggerTargets[0]?.value
-          const rawCap = slot.triggerTargets[1]?.value
-          const rawArea = slot.triggerTargets[2]?.value
-          const labor = (rawLabor !== null && rawLabor !== undefined) ? Number(rawLabor) : 15000
-          const cap = (rawCap !== null && rawCap !== undefined) ? Number(rawCap) : 1000
-          const area = (rawArea !== null && rawArea !== undefined) ? Number(rawArea) : 80
-
-          const payPerOutput = labor / Math.max(cap, 1)
-          const utilization = cap / Math.max(area * 25, 1)
-
-          // 薪酬满意度: 按地段生活成本浮动 baseline=3+等级×0.4
-          // 1级地段:3.4, 5级地段:5.0, 10级地段:7.0
-          const rawG = engine2.raw.data.GetValue('B15', 'value')
-          const grade = (rawG !== null && rawG !== undefined) ? Number(rawG) : 5
-          const payBaseline = 3.0 + grade * 0.4
-          let paySat: number
-          if (payPerOutput >= payBaseline) {
-            paySat = 0.7 + Math.min((payPerOutput - payBaseline) / (payBaseline * 2), 0.3)
-          } else {
-            paySat = payPerOutput / payBaseline * 0.7
-          }
-
-          // 过劳惩罚: 利用率超80%开始扣
-          const overworkPenalty = Math.max(0, utilization - 0.8) * 1.5
-
-          return Math.round(Math.min(1, Math.max(0, paySat - overworkPenalty)) * 1000) / 1000
-        },
-        triggerKeys: ['value', 'value', 'value'],
-      } as any)
-
-      // —— B20 口味/品质: 满意度高→好面包, 满意度低→糟蹋原料 ——
-      engine2.raw.config.SetRules(
-        ['B21', 'B3', 'B14'], 'B20', 'value', {
-        logic: ({ slot }: any) => {
-          const rawSat = slot.triggerTargets[0]?.value
-          const rawCap = slot.triggerTargets[1]?.value
-          const rawArea = slot.triggerTargets[2]?.value
-          const sat = (rawSat !== null && rawSat !== undefined) ? Number(rawSat) : 0.8
-          const cap = (rawCap !== null && rawCap !== undefined) ? Number(rawCap) : 1000
-          const area = (rawArea !== null && rawArea !== undefined) ? Number(rawArea) : 80
-
-          const utilization = cap / Math.max(area * 25, 1)
-
-          let taste: number
-          if (sat >= 0.6) {
-            // 满意员工→好面包, 超负荷略降
-            const overload = Math.max(0, utilization - 0.9) * 0.5
-            taste = Math.min(1, Math.max(0.3, 1.0 - overload))
-          } else {
-            // 不满意→糟蹋原料
-            taste = sat * 0.6
-          }
-
-          return Math.round(taste * 1000) / 1000
-        },
-        triggerKeys: ['value', 'value', 'value'],
-      } as any)
-
-      entangleReady = true
-    }
-    engine2.raw.data.SilentSet('B1', 'value', 12)
-    engine2.raw.data.SilentSet('B1', 'formula', '')
-    engine2.raw.data.SilentSet('B9', 'value', 15000)
-    engine2.raw.data.SilentSet('B9', 'formula', '')
-    engine2.raw.data.SilentSet('B10', 'value', 3)
-    engine2.raw.data.SilentSet('B10', 'formula', '')
-    engine2.raw.data.SilentSet('B11', 'value', 1)
-    engine2.raw.data.SilentSet('B11', 'formula', '')
-    engine2.raw.data.SilentSet('B13', 'value', 0)
-    engine2.raw.data.SilentSet('B13', 'formula', '')
-    engine2.raw.data.SilentSet('B14', 'value', 80)
-    engine2.raw.data.SilentSet('B14', 'formula', '')
-    engine2.raw.data.SilentSet('B15', 'value', 5)
-    engine2.raw.data.SilentSet('B15', 'formula', '')
-    engine2.raw.data.SilentSet('B17', 'value', 0)
-    engine2.raw.data.SilentSet('B17', 'formula', '')
-    engine2.raw.data.SilentSet('B18', 'value', 0)
-    engine2.raw.data.SilentSet('B18', 'formula', '')
-    engine2.raw.data.SilentSet('B19', 'value', 0)
-    engine2.raw.data.SilentSet('B19', 'formula', '')
-    engine2.raw.data.SilentSet('B20', 'value', 0.8)
-    engine2.raw.data.SilentSet('B20', 'formula', '')
-    engine2.raw.data.SilentSet('B21', 'value', 0.8)
-    engine2.raw.data.SilentSet('B21', 'formula', '')
-
-    engine.setCellValue('A1', '💰 售价(元)')
-    engine.setCellValue('A2', '📊 月需求(个)')
-    engine.setCellValue('A3', '🏭 月产能(个)')
-    engine.setCellValue('A4', '🔧 加工成本(元/个)')
-    engine.setCellValue('A5', '🏢 房租(元/月)🏗️')
-    engine.setCellValue('A9', '👷 人工成本(元/月)')
-    engine.setCellValue('A10', '🥖 原料成本(元/个)')
-    engine.setCellValue('A11', '📦 其他变动成本(元/个)')
-    engine.setCellValue('A13', '📢 营销投入(元/月)')
-    engine.setCellValue('A14', '📐 店面面积(m²)')
-    engine.setCellValue('A15', '⭐ 场地等级(1-10)')
-    engine.setCellValue('A16', '📜 上期需求(自洽)')
-    engine.setCellValue('A17', '⚠️ 上期缺货率')
-    engine.setCellValue('A18', '📦 上期报废率')
-    engine.setCellValue('A19', '🌟 知名度(品牌)')
-    engine.setCellValue('A20', '😋 口味/品质')
-    engine.setCellValue('A21', '😊 员工满意度')
-
-    engine.setCellFormula('B6', '=B1*MIN(B2,B3)')
-    engine.setCellFormula('B12', '=(B10+B11+B4)*B3')
-    engine.setCellFormula('B7', '=B12+B5+B9+B13')
-    engine.setCellFormula('B8', '=B6-B7')
-
-    engine2.raw.config.notifyAll()
-
-    // 自洽初始化: B16(上期需求) = B2(本期需求)
-    // 避免 B16=3600(拍脑袋) 导致首月产能虚高
-    const initialDemand = engine.getCellValue('B2')
-    const b2Val = (initialDemand !== null && initialDemand !== undefined) ? Number(initialDemand) : 400
-    engine2.raw.data.SilentSet('B16', 'value', Math.max(100, Math.round(b2Val)))
-    engine2.raw.data.SilentSet('B16', 'formula', '')
-    engine2.raw.config.notifyAll()  // 引擎重算 B3(使用自洽的 B16)
-
-    ;(window as any).__engine = engine2
-
-    const logger = useLogger({ focusPaths: ['B9', 'B3'] })
-    engine2.raw.config.usePlugin(logger)
-  } catch (e: any) {
-    console.error('onMounted error:', e.message, e.stack)
-  }
+  ;(window as any).__engine = engine as any
 })
+
+// 暗黑主题覆盖 — 纯黑底 + 绿金点缀
+const themeOverrides: GlobalThemeOverrides = {
+  common: {
+    primaryColor: '#4CAF50',
+    primaryColorHover: '#66BB6A',
+    primaryColorPressed: '#388E3C',
+    successColor: '#4CAF50',
+    bodyColor: '#0a0a0a',
+    cardColor: '#141414',
+    modalColor: '#141414',
+    tableColor: '#0a0a0a',
+    inputColor: '#141414',
+    inputColorDisabled: '#0a0a0a',
+    actionColor: '#0a0a0a',
+    popoverColor: '#141414',
+    hoverColor: '#222222',
+    borderColor: '#2a2a2a',
+    textColor1: '#e0e0e0',
+    textColor2: '#9a9a9a',
+    textColor3: '#5a5a5a',
+    borderRadius: '6px',
+    fontSizeSmall: '11px',
+    fontSize: '12px',
+    fontSizeMedium: '12px',
+    fontSizeLarge: '14px',
+  },
+  Button: {
+    color: '#141414',
+    colorHover: '#222222',
+    colorPrimary: '#1a3a1a',
+    colorHoverPrimary: '#2a5a2a',
+    borderPrimary: '#2a5a2a',
+    textColorPrimary: '#4CAF50',
+    textColorHoverPrimary: '#66BB6A',
+    textColorSuccess: '#4CAF50',
+    colorSuccess: '#1a3a1a',
+    colorHoverSuccess: '#2a5a2a',
+    borderSuccess: '#2a5a2a',
+    fontWeight: 'bold',
+    fontSizeSmall: '12px',
+    fontSizeMedium: '13px',
+    fontSizeLarge: '15px',
+  },
+  Slider: {
+    fillColor: '#4CAF50',
+    fillColorHover: '#66BB6A',
+    railColor: '#1a1a1a',
+    railColorHover: '#2a2a2a',
+    handleColor: '#4CAF50',
+    handleColorHover: '#66BB6A',
+    dotColor: '#1a1a1a',
+    dotColorModal: '#1a1a1a',
+    dotColorPopover: '#1a1a1a',
+    handleSize: '20px',
+    railHeight: '8px',
+    fontSize: '10px',
+    tooltipColor: '#141414',
+    tooltipTextColor: '#e0e0e0',
+    tooltipBoxShadow: '0 2px 8px rgba(0,0,0,0.4)',
+  },
+  Progress: {
+    railColor: '#1a1a1a',
+    fontSize: '9px',
+    textColor: '#e0e0e0',
+  },
+  Tag: {
+    color: '#222222',
+    textColor: '#e0e0e0',
+    border: '#2a2a2a',
+    fontSizeSmall: '10px',
+    padding: '0 6px',
+  },
+}
 </script>
 
 <style>
 * { margin: 0; padding: 0; box-sizing: border-box; }
 body {
   font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
-  background: #f5f5f7;
-  color: #1d1d1f;
+  background: #0a0a0a;
+  color: #e0e0e0;
   overflow: hidden;
   height: 100vh;
-  touch-action: manipulation;
-  -webkit-tap-highlight-color: transparent;
 }
-.app { max-width: 1200px; margin: 0 auto; padding: 8px 12px; height: 100vh; display: flex; flex-direction: column; }
-@media (max-width: 480px) { .app { padding: 4px 6px; } }
+.app { width: 100%; height: 100vh; }
 
-.toolbar { display: flex; align-items: center; justify-content: space-between; margin-bottom: 4px; flex-shrink: 0; }
-.toolbar-left { display: flex; align-items: center; gap: 4px; flex-wrap: wrap; }
-.toolbar h1 { font-size: 14px; font-weight: 600; color: #0071e3; letter-spacing: -0.2px; }
-.badge { font-size: 11px; padding: 2px 7px; border-radius: 8px; background: #e8e8ed; color: #6e6e73; white-space: nowrap; }
-.badge-engine { background: #e3f2fd; color: #0071e3; }
-.grid-size { font-family: 'SF Mono', 'Menlo', monospace; }
+.guide-btn {
+  position: fixed; top: 12px; right: 12px; z-index: 999;
+  width: 36px; height: 36px; border-radius: 50%;
+  border: 1px solid #2a2a2a; background: #141414;
+  color: #ffd700; font-size: 16px; cursor: pointer;
+  display: flex; align-items: center; justify-content: center;
+  box-shadow: 0 2px 12px rgba(0,0,0,0.4);
+}
+.guide-btn:hover { background: #222222; border-color: #4CAF50; }
 
-.btn {
-  font-size: 12px; padding: 4px 9px; border-radius: 5px;
-  border: 1px solid #d2d2d7;
-  background: #ffffff; color: #1d1d1f;
-  cursor: pointer; transition: all 0.1s; white-space: nowrap;
-}
-.btn:hover { background: #f5f5f7; border-color: #a1a1a6; }
-.btn-sm { font-size: 11px; padding: 2px 7px; }
-.btn-danger:hover { background: #fef2f2; border-color: #f87171; color: #dc2626; }
+/* 移除旧的 guide-overlay 样式 — 改用 n-modal */
+.guide-overlay, .guide-panel, .guide-header, .guide-body, .close-btn { display: none; }
 
-.formula-bar {
-  display: flex; align-items: center; gap: 6px; margin-bottom: 4px;
-  background: #ffffff; border: 1px solid #d2d2d7; border-radius: 5px;
-  padding: 4px 8px; flex-shrink: 0;
+/* ===== 三栏布局 ===== */
+.main-layout {
+  display: grid;
+  grid-template-columns: minmax(300px, 25%) 1fr 260px;
+  height: 100vh;
 }
-.cell-ref {
-  font-family: 'SF Mono', 'Menlo', monospace; font-size: 12px;
-  color: #86868b; min-width: 32px; font-weight: 600; user-select: none;
-}
-.formula-input {
-  flex: 1; background: transparent; border: none;
-  color: #1d1d1f; font-size: 12px;
-  font-family: 'SF Mono', 'Menlo', monospace; outline: none;
-}
-.formula-input::placeholder { color: #aeaeb2; }
-.formula-preview {
-  font-size: 11px; color: #86868b;
-  padding: 1px 5px; background: #f5f5f7; border-radius: 3px;
-  max-width: 200px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
-}
-
-/* 纯 HTML 表格 (替代 RevoGrid) */
-.grid-wrap { flex: 1; overflow: hidden; border: 1px solid #d2d2d7; border-radius: 5px; }
-.grid-scroll {
-  width: 100%; height: 100%; overflow: auto;
-}
-.mesh-table {
-  border-collapse: collapse; font-size: 11px; font-family: 'SF Mono', 'Menlo', monospace;
-  min-width: 100%; table-layout: fixed;
-}
-.mesh-table th, .mesh-table td {
-  border: 1px solid #e5e5ea; padding: 2px 6px; text-align: right;
-  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
-  min-width: 72px; height: 24px;
-}
-.mesh-table thead th {
-  background: #f5f5f7; color: #1d1d1f; font-weight: 600;
-  font-size: 10px; text-align: center; position: sticky; top: 0; z-index: 2;
-}
-.mesh-table .rn {
-  min-width: 36px; width: 36px;
-  background: #f5f5f7; color: #86868b; font-size: 9px;
-  text-align: center; position: sticky; left: 0; z-index: 1;
-  user-select: none;
-}
-.mesh-table thead .rn { z-index: 3; }
-.mesh-table tbody tr:hover td:not(.rn):not(.cell-selected) {
-  background: #f5f5f7;
-}
-.mesh-table .cell-selected {
-  background: rgba(0,113,227,0.12) !important;
-  outline: 2px solid #0071e3; outline-offset: -1px;
-}
-.mesh-table .col-head {
-  user-select: none; cursor: default;
-}
-
-.graph-view {
-  flex: 1;
+.left-panel {
+  background: #0a0a0a;
+  border-right: 1px solid #2a2a2a;
   overflow: hidden;
-  border: 1px solid #d2d2d7;
-  border-radius: 5px;
-  background: #fafafa;
 }
-
-.view-switcher {
-  display: flex;
-  gap: 2px;
-  background: #e8e8ed;
-  border-radius: 5px;
-  padding: 2px;
+.middle-panel {
+  display: grid;
+  grid-template-rows: 230px 1fr;
+  overflow: hidden;
 }
-
-.view-switcher .btn {
-  border: none;
-  background: transparent;
-  transition: all 0.15s;
+.log-panel-wrap {
+  overflow: hidden;
+  border-left: 1px solid #2a2a2a;
 }
-
-.view-switcher .btn.active {
-  background: white;
-  border-color: white;
-  box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+.chart-area {
+  border-bottom: 1px solid #2a2a2a;
+  overflow: hidden;
+  min-height: 0;
 }
-
-.status-bar {
-  display: flex; align-items: center; justify-content: space-between;
-  padding: 3px 6px; margin-top: 3px;
-  font-size: 11px; color: #86868b;
-  background: #f5f5f7; border-top: 1px solid #d2d2d7; flex-shrink: 0; min-height: 22px;
+.graph-area {
+  overflow: hidden;
+  min-height: 0;
 }
-.status-right { display: flex; align-items: center; gap: 6px; }
-.save-indicator { animation: fadeIn 0.2s; color: #34c759; }
-.converge-badge { font-size: 11px; padding: 1px 6px; border-radius: 8px; background: #e8f5e9; color: #2e7d32; font-weight: 500; }
-@keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
 </style>

@@ -1,5 +1,7 @@
-import { useMeshFlow } from '@meshflow/core'
+import { useMeshFlow, deleteEngine as _deleteMeshEngine } from '@meshflow/core'
+import { useLogger } from '@meshflow/logger'
 import { Parser } from 'hot-formula-parser'
+import { shallowRef, ref } from 'vue'
 
 export type CellId = string
 
@@ -109,12 +111,35 @@ export interface SheetEngine {
   notifyAll: () => any
   /** 原始引擎实例（供纠缠等高级 API 使用） */
   raw: any
+  /** 历史模块（Undo/Redo） */
+  history?: {
+    Undo: () => void
+    Redo: () => void
+    updateUndoSize: (cb: (n: number) => void) => void
+    updateRedoSize: (cb: (n: number) => void) => void
+  }
+  /** 便捷 SetValue (写入引擎单元格并触发历史记录) */
+  SetValue: (id: CellId, val: any) => void
+  /** 便捷 GetValue (读取引擎单元格) */
+  GetValue: (id: CellId) => any
+  /** 便捷 SilentSet (写入引擎单元格但不触发规则求值) */
+  SilentSet: (id: CellId, val: any) => void
+  /** 销毁引擎实例（从全局缓存移除） */
+  destroy: () => void
+  /** 最近变更的节点 ID 集（供 UI 高亮用）。拖动滑块：Set([id])；推月份：Set([所有联动节点]) */
+  changedNodes: { value: Set<string> }
+  uiSignal: { value: number }
 }
 
+const ENGINE_ID = 'meshflow-sheet'
+
 export function createSheetEngine(): SheetEngine {
-  const engineId = 'sheet-' + Date.now()
+  // 清理旧实例（支持热重载 / 重复调用）
+  try { _deleteMeshEngine(ENGINE_ID) } catch {}
+
   let engine: any
-  let _engineId = ''
+  const uiSignal = ref(0)
+
 
   function buildNodes(_rows: number, _cols: number) {
     const nodes: { path: CellId; initValue: CellState }[] = []
@@ -129,12 +154,13 @@ export function createSheetEngine(): SheetEngine {
 
   function initEngine(_rows: number, _cols: number) {
     const nodes = buildNodes(_rows, _cols)
-    _engineId = 'sheet-' + Date.now()
-    console.log('createEngine id:', _engineId, 'nodes:', nodes.length)
-    // useMeshFlow 的 nodes schema 仅用于 TS 类型推导
-    // 节点注册必须通过 modules 中的模块显式调用 scheduler.registerNode()
-    engine = useMeshFlow(_engineId, { nodes } as any, {
+    console.log('createEngine id:', ENGINE_ID, 'nodes:', nodes.length)
+    engine = useMeshFlow(ENGINE_ID, { nodes } as any, {
       config: { useGreedy: true },
+      UITrigger: {
+        signalCreator: () => uiSignal,
+        signalTrigger: (signal: any) => signal.value++,
+      },
       modules: {
         mountNodes: (scheduler: any, schema: any) => {
           for (const n of schema.nodes) {
@@ -146,9 +172,25 @@ export function createSheetEngine(): SheetEngine {
               meta: {},
             }).createView()
           }
+          // 额外节点（不在 A1-J25 范围内的特殊 ID。B16-B25 已在格子里，M1/P1/T1/B26/B28 不在）
+          for (const path of ['FAT', 'EMP', 'BRAND', 'TRAFFIC', 'M1', 'P1', 'T1', 'B26', 'B28', 'B32']) {
+            scheduler.registerNode({
+              path,
+              type: 'cell',
+              state: { value: 0, formula: '' },
+              notifyKeys: new Set(['value', 'formula']),
+              meta: {},
+            }).createView()
+          }
         },
       },
-    } as any)
+    } as any);
+
+    const logger = useLogger( {
+    // locale:'en',
+        focusPaths:['B18']
+    })
+    let cancel = engine.config.usePlugin(logger)
   }
 
   initEngine(ROWS, COLS)
@@ -194,7 +236,7 @@ export function createSheetEngine(): SheetEngine {
     try {
       engine.data.SilentSet(id, 'formula', formula)
     } catch (e: any) {
-      console.error('setCellFormula SilentSet failed', id, formula, 'engineId:', _engineId, e.message)
+      console.error('setCellFormula SilentSet failed', id, formula, 'engineId:', ENGINE_ID, e.message)
       return
     }
 
@@ -334,5 +376,11 @@ export function createSheetEngine(): SheetEngine {
     clearAll,
     notifyAll: () => engine.config.notifyAll(),
     raw: engine,
+    changedNodes: shallowRef(new Set<string>()),
+    uiSignal,
+    SetValue: (id: CellId, val: any) => engine.data.SetValue(id, 'value', val),
+    GetValue: (id: CellId) => { try { return engine.data.GetValue(id, 'value') } catch { return 0 } },
+    SilentSet: (id: CellId, val: any) => engine.data.SilentSet(id, 'value', val),
+    destroy: () => { try { _deleteMeshEngine(ENGINE_ID) } catch {} },
   }
 }

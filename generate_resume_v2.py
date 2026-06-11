@@ -228,14 +228,13 @@ def build_main():
     # ── Summary ────────────────────────────────────────────────────
     items.extend(section_header('个人概况'))
     items.append(Paragraph(
-        '喜欢编码，爱折腾，喜欢接触前沿技术，独立研发了 13KB 的任务编排引擎 MeshFlow。',
+        '喜欢编码，爱折腾，喜欢接触前沿技术。独立研发了 13KB 的任务编排引擎 MeshFlow，并用其构建了面包店经营沙盘作为实战验证。',
         S('sum', fontSize=9.5, leading=17, textColor=C_BODY)
     ))
 
-    # ── Project ────────────────────────────────────────────────────
+    # ── Project 1: MeshFlow ────────────────────────────────────────
     items.extend(section_header('个人开源项目'))
 
-    # Title row
     items.append(Paragraph(
         f'<font size="12"><b>MeshFlow</b></font>'
         f'&nbsp;&nbsp;&nbsp;'
@@ -251,15 +250,42 @@ def build_main():
         S('pjl', fontSize=8.5, leading=14, textColor=C_MUTED, spaceAfter=3)
     ))
 
-    proj_bullets = [
+    meshflow_bullets = [
         ('<b>因果确定性调度 (DAG)</b>：基于拓扑排序与水位线同步栅栏构建执行引擎，确保下游节点仅在所有依赖就绪后触发，杜绝中间态脏读。', C_BODY),
         ('<b>任务版本覆盖 (Token)</b>：设计 Token 状态保护标识，新任务始终拥有最高优先级，自动屏蔽过期异步回调，解决高频交互下的竞态覆盖。', C_BODY),
         ('<b>计算记忆化与拓扑剪枝</b>：基于依赖桶的结果快照，节点重计算结果一致时自动阻断下游传播路径，拦截无效级联更新。', C_BODY),
         ('<b>环路依赖治理 (纠缠机制)</b>：借鉴 CRDT 思想，引入 Ghost 权重仲裁将空间环路转为时间轴线性演化，确保双向制约场景下的最终一致性收敛。', C_BODY),
-        ('<b>面包店经营沙盘 — 实战验证</b>：配合 AI Agent 构建了含 28+ 节点、多层 DAG 依赖的经营模拟系统，涵盖客流分化、批发渠道自动触发、品质惩罚与品牌衰减、季节性波动、员工疲劳与经验累积等非线性机制；引擎稳定推演出社区 / 大厂 / 高奢三条策略路线的差异化经营结果。', C_BODY),
         ('<b>极致轻量</b>：压缩后仅 13KB，完全 Headless，零外部依赖。', C_MUTED),
     ]
-    for txt, color in proj_bullets:
+    for txt, color in meshflow_bullets:
+        items.append(B(txt, color))
+
+    items.append(Spacer(1, 6*mm))
+
+    # ── Project 2: Bakery Sandbox ──────────────────────────────────
+    # Thin divider to separate from MeshFlow
+    items.append(Bar(MAIN_W * 0.4, 0.4*mm, HexColor('#d0d5dd')))
+    items.append(Spacer(1, 3*mm))
+
+    items.append(Paragraph(
+        f'<font size="11.5"><b>面包店经营沙盘</b></font>'
+        f'&nbsp;&nbsp;&nbsp;'
+        f'<font color="{C_MUTED.hexval()}" size="10">MeshFlow 复杂系统实战验证</font>',
+        S('pj2', fontSize=11, leading=18, textColor=BG_DARK, spaceAfter=1)
+    ))
+    items.append(Paragraph(
+        f'<font color="{C_MUTED.hexval()}" size="8.5">2026.06</font>'
+        f'&nbsp;&nbsp;&nbsp;'
+        f'<font color="{C_ACCENT2.hexval()}" size="8.5">meshflow-bread.vercel.app</font>',
+        S('pjl2', fontSize=8.5, leading=14, textColor=C_MUTED, spaceAfter=3)
+    ))
+
+    bakery_bullets = [
+        ('22 个节点之间不仅存在单向 DAG 数据流，还包含循环依赖——例如产能影响加工成本、加工成本又反过来影响产能，形成闭环。这种链路无法用传统拓扑排序处理，必须依赖引擎的纠缠机制进行冲突仲裁与收敛。', C_BODY),
+        ('模型涵盖客流分化、批发渠道自动触发、品质惩罚与品牌衰减、季节性波动等非线性机制；支持社区 / 大厂 / 高奢三条策略路线的实时识别与差异化推演。', C_BODY),
+        ('配合 AI 辅助完成前端界面开发与 Python 穷举验证脚本，现已部署上线并提供 DAG 节点关系可视化编辑器。', C_BODY),
+    ]
+    for txt, color in bakery_bullets:
         items.append(B(txt, color))
 
     # ── Work ───────────────────────────────────────────────────────
@@ -319,10 +345,9 @@ doc = ResumeDoc(
     output_path,
     pagesize=A4,
     leftMargin=0, rightMargin=0, topMargin=0, bottomMargin=0,
-    title='倪子尧 - 前端工程师简历',
-    author='倪子尧',
+    title='Resume',
+    author='Nzy',
 )
 
 doc.build(build_main())
-print(f'Done → {output_path}')
-                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        
+print(f'Done')

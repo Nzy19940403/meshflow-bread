@@ -173,7 +173,7 @@ export function createSheetEngine(): SheetEngine {
             }).createView()
           }
           // 额外节点（不在 A1-J25 范围内的特殊 ID。B16-B25 已在格子里，M1/P1/T1/B26/B28 不在）
-          for (const path of ['FAT', 'EMP', 'BRAND', 'TRAFFIC', 'M1', 'P1', 'T1', 'B26', 'B28', 'B32']) {
+          for (const path of ['FAT', 'EMP', 'BRAND', 'TRAFFIC', 'M1', 'P1', 'T1', 'B26', 'B28', 'B32', 'COST', 'B2B']) {
             scheduler.registerNode({
               path,
               type: 'cell',

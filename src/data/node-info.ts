@@ -31,12 +31,14 @@ export const NODE_INFO: Record<string, NodeInfo> = {
 
   // ===== 市场与客流 =====
   B2:  { icon: '📊', name: '零售需求', desc: '客流(地段/面积/营销/口碑)×转化率(价格/品牌/满意/品质)×季节系数。',                    inputs: ['B1','B13','B14','B15','B21','B26','B28','BRAND'], outputs: ['B6','FAT','BRAND'] },
-  BRAND: { icon: '🌟', name: '品牌知名度', desc: '0-∞。增长=满意×bg1+品质×bg2+疲劳修正+营销√。每月衰减1.5%。低地段溢价受限。',     inputs: ['B13','B20','B21','B28','B2','FAT'], outputs: ['B2'] },
+  BRAND: { icon: '🌟', name: '品牌知名度', desc: '增长=口味B20+满意B21+品质B28+营销B13+疲劳修正(100-FAT)/100×5。每月衰减1.5%。缺货(B2)扣8点。', inputs: ['B13','B20','B21','B28','B2','FAT'], outputs: ['B2'] },
 
   // ===== 财务汇总 =====
   B5:  { icon: '🏢', name: '房租',     desc: '面积×地段×动态单价(rb+rd/(area+15))。工业区(低地段)租金极便宜, 核心商圈极贵。',       inputs: ['B14','B15'],    outputs: ['B7'] },
   B12: { icon: '🏗️', name: '实际原料成本', desc: 'B10×(1-min(0.4,B3×0.00006))。批量采购折扣, 产能越高越便宜。上限40%折扣。',        inputs: ['B10','B3'],     outputs: ['B7'] },
-  B6:  { icon: '📈', name: '月收入',   desc: '零售收入(B6×B1) + B2B收入(面积≥150时, 每人1200件×批发价)。',                            inputs: ['B1','B2','B3'], outputs: ['B7','B8'] },
-  B7:  { icon: '📉', name: '总成本',   desc: '生产B12+房租B5+人工B9+营销B13+包装+水电+折旧+培训+杂费。',                              inputs: ['B1','B5','B6','B9','B12','B13','B28'], outputs: ['B8'] },
-  B8:  { icon: '✅', name: '月利润',   desc: 'B6收入 - B7成本。正=盈利, 负=亏损。所有固定成本在此汇总扣除。',                          inputs: ['B6','B7','B25'], outputs: [] },
+  B6:  { icon: '📦', name: '零售销量', desc: '实际零售出货 = min(需求B2, 产能B3)。卖多少取决于"想要多少"和"能做多少"的短板。',         inputs: ['B2','B3'], outputs: ['B7','B8'] },
+  B7:  { icon: '📈', name: '月收入',   desc: '零售收入 = 销量(B6) × 售价(B1)。',         inputs: ['B1','B6'], outputs: ['B8'] },
+  B2B: { icon: '🚛', name: '批发销量', desc: '工厂路线专属: 面积≥150㎡时剩余产能全部走B2B企业订单。每人月出1200件+超额㎡×500件。社区/高奢此值为0。', inputs: ['B14','B3','B6','B24'], outputs: ['B7','COST'] },
+  COST:{ icon: '💸', name: '总成本',   desc: '所有成本项汇总: 零售COGS+批发COGS+房租+人工+营销+培训+折旧+水电。', inputs: ['B12','B1','B4','B5','B9','B24','B25','B13','B14','B6','B2B','B10'], outputs: ['B8'] },
+  B8:  { icon: '✅', name: '月利润',   desc: 'B7月收入 − COST总成本。正=盈利, 负=亏损。', inputs: ['B7','COST'], outputs: [] },
 }

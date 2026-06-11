@@ -502,61 +502,57 @@ function setupBakeryRules(eng: any) {
     logic: ({slot}:any) => Math.min(slot.triggerTargets[0]?.value??0,slot.triggerTargets[1]?.value??0)
   })
   
-// B7 = 总收入 — B2B产出×B21满意度系数 — 零售B6×B1 + B2B(1000/人, 25%零售×品质系数)
-  eg.config.SetRules(['B6','B1','B14','B3','B24','B28','B21'], 'B7', 'value', {
-    triggerKeys: ['value','value','value','value','value','value'],
+  // B7 = 零售B6×B1 + B2B批发收入(从B2B节点读值, B28定品质系数)
+  eg.config.SetRules(['B6','B1','B2B','B28'], 'B7', 'value', {
+    triggerKeys: ['value','value','value','value'],
     logic: ({slot}:any) => {
       const b6=slot.triggerTargets[0]?.value??0,b1=slot.triggerTargets[1]?.value??16
-      const b14=slot.triggerTargets[2]?.value??60,b3=slot.triggerTargets[3]?.value??0
-      const b24=slot.triggerTargets[4]?.value??3
-      const b28=slot.triggerTargets[5]?.value??0.6
+      const b2bSold=slot.triggerTargets[2]?.value??0,b28=slot.triggerTargets[3]?.value??0.6
       const retail=b6*b1
-      let ws=0
-      if(b14>=150){
-        const remaining=Math.max(0,b3-b6)
-        const bbpEff=1200  // V9: 固定1200/人, 满意度不砍产量只影响售价
-	        const b2bCap=b24*bbpEff
-        const spotCap=Math.round((b14-150)*500)
-        const wSold=Math.min(b2bCap+spotCap,remaining)
-        // 品质系数: B28<0.4→B2B价打7折, B28<0.6→9折, B28≥0.6→全额
-        const qualityMult = b28 >= 0.6 ? 1.0 : b28 >= 0.4 ? 1.0 - (0.6 - b28) * 0.5 : 0.9 - (0.4 - b28) * 1.0
-        // V8: 满意度也影响B2B售价 — 低满意=差品控=客户压价
-        const b2bPriceMult = Math.min(b1, 22) * 0.25 * Math.max(0.5, qualityMult)
-        ws=Math.round(wSold*b2bPriceMult)
-      }
+      const qualityMult = b28 >= 0.6 ? 1.0 : b28 >= 0.4 ? 1.0 - (0.6 - b28) * 0.5 : 0.9 - (0.4 - b28) * 1.0
+      const b2bPriceMult = Math.min(b1, 22) * 0.25 * Math.max(0.5, qualityMult)
+      const ws=Math.round(b2bSold*b2bPriceMult)
       return retail+ws
     }
   })
   
-// B8 = 月利润
-  eg.config.SetRules(['B7','B12','B1','B4','B3','B5','B9','B24','B25','B13','B14','B6','B10'], 'B8', 'value', {
-    triggerKeys: ['value','value','value','value','value','value','value','value','value','value','value','value','value'],
+  // B2B = 批发销量 — 面积≥150时, 剩余产能全部走B2B
+  eg.config.SetRules(['B14','B3','B6','B24'], 'B2B', 'value', {
+    triggerKeys: ['value','value','value','value'],
     logic: ({slot}:any) => {
-            const b7=slot.triggerTargets[0]?.value??0,b12=slot.triggerTargets[1]?.value??0
-        const b1=slot.triggerTargets[2]?.value??16,b4=slot.triggerTargets[3]?.value??0
-        const b3=slot.triggerTargets[4]?.value??0,b5=slot.triggerTargets[5]?.value??0
-        const b9=slot.triggerTargets[6]?.value??0,b24=slot.triggerTargets[7]?.value??8
-        const b25=slot.triggerTargets[8]?.value??100,b13=slot.triggerTargets[9]?.value??0
-        const b14=slot.triggerTargets[10]?.value??150,b6=slot.triggerTargets[11]?.value??0
-        const b10=slot.triggerTargets[12]?.value??3
-      const dp2=dynParams(slot.triggerTargets[5]?.value??3, slot.triggerTargets[10]?.value??60)
-      const pkg=Math.round(b1*dp2.pr),util=Math.round(b14*dp2.ua+b24*dp2.us),eq=dp2.eq
-      const trn=b25*b24,misc=Math.round(0.02*b24*1000)
-      const retailCogs=Math.round((b12+pkg+b4)*Math.min(b6,b3))
-      let wsCogs=0
-      if(b14>=150){
-        const remaining=Math.max(0,b3-b6)
-        const bbpEff=1200  // V9: 固定1200/人, 满意度不砍产量只影响售价
-	        const b2bCap=b24*bbpEff
-        const spotCap=Math.round((b14-150)*500)
-        const wSold=Math.min(b2bCap+spotCap,remaining)
-        wsCogs=Math.round(wSold*b10*0.50+wSold*0.3)  // 原料 简包装
-      }
-      const cogs=retailCogs+wsCogs
-      return Math.round(b7-cogs-b5-b9-b13-trn-misc-util-eq)
+      const b14=slot.triggerTargets[0]?.value??60,b3=slot.triggerTargets[1]?.value??0
+      const b6=slot.triggerTargets[2]?.value??0,b24=slot.triggerTargets[3]?.value??3
+      if(b14<150) return 0
+      const remaining=Math.max(0,b3-b6)
+      return Math.min(b24*1200+Math.round((b14-150)*500), remaining)
     }
   })
-  
+
+  // COST = 总成本汇总（B2B成本从B2B节点读, retailCogs用B6×B3短板）
+  eg.config.SetRules(['B12','B1','B4','B5','B9','B24','B25','B13','B14','B6','B2B','B10'], 'COST', 'value', {
+    triggerKeys: ['value','value','value','value','value','value','value','value','value','value','value','value'],
+    logic: ({slot}:any) => {
+      const b12=slot.triggerTargets[0]?.value??0,b1=slot.triggerTargets[1]?.value??16,b4=slot.triggerTargets[2]?.value??0
+      const b5=slot.triggerTargets[3]?.value??0,b9=slot.triggerTargets[4]?.value??0
+      const b24=slot.triggerTargets[5]?.value??3,b25=slot.triggerTargets[6]?.value??100
+      const b13=slot.triggerTargets[7]?.value??0,b14=slot.triggerTargets[8]?.value??60
+      const b6=slot.triggerTargets[9]?.value??0,b2bSold=slot.triggerTargets[10]?.value??0
+      const b10=slot.triggerTargets[11]?.value??3
+      const dpC=dynParams(b14>=150?3:6, b14)
+      const pkg=Math.round(b1*dpC.pr),util=Math.round(b14*dpC.ua+b24*dpC.us),eq=dpC.eq
+      const trn=b25*b24,misc=Math.round(0.02*b24*1000)
+      const retailCogs=Math.round((b12+pkg+b4)*Math.min(b6,Math.max(1,b2bSold+b6)))
+      const wsCogs=Math.round(b2bSold*b10*0.50+b2bSold*0.3)
+      return retailCogs+wsCogs+b5+b9+b13+trn+misc+util+eq
+    }
+  })
+
+
+// B8 = 月利润 = B7 - COST
+  eg.config.SetRules(['B7','COST'], 'B8', 'value', {
+    triggerKeys: ['value','value'],
+    logic: ({slot}:any) => Math.round((slot.triggerTargets[0]?.value??0) - (slot.triggerTargets[1]?.value??0))
+  })
 // ============ Entangle（循环组 B3↔B4↔B21） ============
   
 const gv = (path: string, fallback = 0) => {
@@ -666,16 +662,20 @@ const gv = (path: string, fallback = 0) => {
       // 零售超负荷→剧烈疲劳
       if (retailUR > 0.88) d = Math.round((retailUR - 0.88) * dp7.frh)  // 社区30/工厂45/高奢35
       if (retailUR > 0.95) d += 2
-      // 恢复：满负荷→禁止恢复。低于路线阈值→恢复(社区高/工厂低)
+      // 恢复：满负荷→禁止恢复。低于毛恢复点→恢复
+      const recoverThreshold = b14 >= 150 ? dp7.ful : 0.85  // 工厂用路线ful, 社区/高奢UR<85%就可以缓恢复
       if (totalUR >= 0.90) {
         d += 3
-      } else if (totalUR < dp7.ful) {
-        d = -Math.round((dp7.ful - totalUR) * 15)
+      } else if (totalUR < recoverThreshold) {
+        d = -Math.round((recoverThreshold - totalUR) * 15)
       } else if (retailUR < 0.75) {
         d = -Math.round((0.75 - retailUR) * 5)
+      } else {
+        // UR 75-88%区间, 零售店自然持平(无B2B疲劳)
+        d += 0
       }
-      // B2B累积疲劳（路线感知: 社区8, 工厂15, 高奢12）
-      if (totalUR > 0.65) d += Math.round((totalUR - 0.65) * dp7.ftr)
+      // B2B累积疲劳：仅工厂(面积≥150)走这条
+      if (b14 >= 150 && totalUR > 0.65) d += Math.round((totalUR - 0.65) * dp7.ftr)
       if (b14 > 150 && b24 < Math.ceil(b14 / 35)) d += 3
       propose.set('value', Math.max(10, Math.min(100, Math.round(curFAT + d))))
     }
@@ -720,7 +720,7 @@ const c = reactive({
   B1: 18, B2: 0, B3: 0, B4: 2, B5: 0, B6: 0, B7: 0, B8: 0,
   B9: 0, B10: 3, B11: 0, B12: 0, B13: 2000, B14: 150, B15: 7,
   B21: 0.8, B28: 0.6, B24: 8, B25: 100,
-  FAT: 40, EMP: 0, BRAND: 0, TRAFFIC: 0,
+  FAT: 40, EMP: 0, BRAND: 0, TRAFFIC: 0, COST: 0,
 })
 const m = ref(1), p = ref(0), t = ref(0)
 
@@ -796,25 +796,46 @@ function rebuildAnnualProfits() {
 let flashTimer: ReturnType<typeof setTimeout> | null = null
 
 // 下游依赖图 (同 GraphEditor.vue)
-const SR_EDGES: [string, string][] = [
-  ['B1','B2'],['B1','B6'],['B14','B5'],['B15','B5'],['B14','B3'],['B9','B3'],
-  ['B15','B2'],['B13','B2'],['B10','B12'],['B11','B12'],['B4','B12'],
-  ['B3','B12'],['B3','B4'],['B1','B6'],['B2','B6'],['B3','B6'],
-  ['B12','B7'],['B5','B7'],['B9','B7'],['B13','B7'],['B22','B7'],
-  ['B6','B8'],['B7','B8'],
-  ['B3','B22'],['B3','B23'],['B23','B12'],
-  ['B9','B21'],['B3','B21'],['B14','B21'],
-  ['B21','B20'],['B28','B20'],
-  ['B28','B2'],  // 原料品质 → 本地客流
-  ['B24','B9'],['B24','B3'],
-  ['B25','B21'],
-  ['B26','B9'],
-  // v3 新增: 原料品质 + 批发 + 季节 + 月度缓存反馈
-  ['B10','B28'],['B3','B28'],['B28','B20'],
-  ['B14','B7'],['B3','B7'],['B10','B7'],  // 批发
-  ['B17','B2'],  // 缺货惩罚 → 需求
-  ['B16','B3'],['B18','B3'],['B25','B18'],  // 月度缓存+培训→报废→产能自适应备货
-]
+	const SR_EDGES: [string, string][] = [
+	  // === SetRule edges (matched to engine SetRules) ===
+	  // B9 = f(B24,B26,B15)
+	  ['B24','B9'],['B26','B9'],['B15','B9'],
+	  // B5 = f(B14,B15)
+	  ['B14','B5'],['B15','B5'],
+	  // B12 = f(B10,B3)
+	  ['B10','B12'],['B3','B12'],
+	  // B28 = f(B10,B26)
+	  ['B10','B28'],['B26','B28'],
+	  // B20 = f(B21,B28)
+	  ['B21','B20'],['B28','B20'],
+	  // B2 = f(B1,B15,B13,BRAND,B21,B26,B14,M1,B28)
+	  ['B1','B2'],['B15','B2'],['B13','B2'],['BRAND','B2'],
+	  ['B21','B2'],['B26','B2'],['B14','B2'],['M1','B2'],['B28','B2'],
+	  // B6 = f(B2,B3)
+	  ['B2','B6'],['B3','B6'],
+	  // B7 = f(B6,B1,B14,B3,B24,B28,B21)
+	  ['B6','B7'],['B1','B7'],['B14','B7'],['B3','B7'],
+	  ['B24','B7'],['B28','B7'],['B21','B7'],
+	  // B8 = f(B7,B12,B1,B4,B3,B5,B9,B24,B25,B13,B14,B6,B10)
+	  ['B7','B8'],['B12','B8'],['B1','B8'],['B4','B8'],['B3','B8'],
+	  ['B5','B8'],['B9','B8'],['B24','B8'],['B25','B8'],['B13','B8'],
+	  ['B14','B8'],['B6','B8'],['B10','B8'],
+	  // M1 -> B3 (SetRule)
+	  ['M1','B3'],
+	
+	  // === Entangle edges (cycle B3<->B4<->B21) ===
+	  ['B3','B4'],['B4','B3'],['B3','B21'],
+	  ['FAT','B3'],            // FAT -> B3 (entangle)
+	  ['B26','B4'],['B9','B21'],['B14','B21'],
+	
+	  // === M1 state entangle ===
+	  ['M1','FAT'],['M1','BRAND'],['M1','EMP'],
+	
+	  // === Monthly cache feedback ===
+	  ['B17','B2'],  // shortage penalty -> demand
+	  ['B16','B3'],['B18','B3'],  // cache -> capacity adapt
+	  ['B25','B18'],  // training -> waste rate
+	]
 const DEP_MAP: Record<string, string[]> = {}
 for (const [src, tgt] of SR_EDGES) {
   if (!DEP_MAP[src]) DEP_MAP[src] = []
@@ -929,6 +950,8 @@ function getLiveValue(id: string): number {
  B20: () => { try { let v = eng.value?.getCellValue('B20'); let n = Number(v); return Number.isFinite(n) ? Math.round(n*100)/100 : 0 } catch { return 0 } }, B15: () => sl[7].v,
     B16: () => { try { return Number(eng.value?.getCellValue('B16'))||0 } catch { return 0 } }, B17: () => { try { return Number(eng.value?.getCellValue('B17'))||0 } catch { return 0 } }, B18: () => { try { return Number(eng.value?.getCellValue('B18'))||0 } catch { return 0 } },
     B26: () => sl[6].v, B28: () => { try { let v = eng.value?.getCellValue('B28'); let n = Number(v); return Number.isFinite(n) ? Math.round(n*1000)/1000 : 0 } catch { return 0 } },
+    B2B: () => { try { let v = eng.value?.getCellValue('B2B'); let n = Number(v); return Number.isFinite(n) ? Math.round(n) : 0 } catch { return 0 } },
+    COST: () => { try { let v = eng.value?.getCellValue('COST'); let n = Number(v); return Number.isFinite(n) ? Math.round(n) : 0 } catch { return 0 } },
   }
   return mapping[id]?.() ?? 0
 }
@@ -1040,6 +1063,8 @@ function readEngine() {
   c.B6 = e.GetValue('B6') ?? c.B6
   c.B7 = e.GetValue('B7') ?? c.B7
   c.B8 = e.GetValue('B8') ?? c.B8
+  const costVal = e.GetValue('COST')
+  c.COST = typeof costVal === 'number' ? costVal : 0
   // 总人流量 = 零售需求B2 + B2B销量(剩余产能)
   const b3 = c.B3 || 0, b2 = c.B2 || 0
   const b2bSold = b3 > b2 ? b3 - b2 : 0
@@ -1169,7 +1194,7 @@ async function redo(){
 }
 function reset(){m.value=1;p.value=0;t.value=0;monthLog.value.length=0;annualProfits.value.length=0
 snapshotStack.value.length=0;redoStack.value.length=0;logEntries.value.length=0;lastSl.length=0;logBuffer.value.length=0
-Object.assign(c,{B2:0,B3:0,B4:2,B5:0,B6:0,B7:0,B8:0,B9:0,B11:0,B12:0,B21:0.8,B28:0.6,B24:8,B25:100,FAT:40,EMP:0,BRAND:0,TRAFFIC:0});sl[0].v=18;sl[1].v=3;sl[2].v=100;sl[3].v=1000;sl[4].v=3;sl[5].v=60;sl[6].v=4000;sl[7].v=3;lastSl.push(...defaultSl)
+Object.assign(c,{B2:0,B3:0,B4:2,B5:0,B6:0,B7:0,B8:0,B9:0,B11:0,B12:0,B21:0.8,B28:0.6,B24:8,B25:100,COST:0,FAT:40,EMP:0,BRAND:0,TRAFFIC:0});sl[0].v=18;sl[1].v=3;sl[2].v=100;sl[3].v=1000;sl[4].v=3;sl[5].v=60;sl[6].v=4000;sl[7].v=3;lastSl.push(...defaultSl)
 setupBakeryRules(eng.value);writeSlider('B1');writeSlider('B24');writeSlider('B25');writeSlider('B13')
 writeSlider('B10');writeSlider('B14');writeSlider('B26');writeSlider('B15')
 eng.value?.raw.data.SilentSet('M1','value',0)
@@ -1505,22 +1530,41 @@ onMounted(async () => {
 })
 </script>
   <style scoped>
-.command-center{background:#0a0a0a;height:100%;display:flex;flex-direction:column;position:relative}
-.cc-scroll{height:100%}
-.cc-body-inner{min-height:100%;display:flex;flex-direction:column;gap:10px;padding:10px 12px}
-.cc-header{display:flex;align-items:center;justify-content:space-between;flex-shrink:0}
-.title{color:#4CAF50;font-size:16px;font-weight:bold;font-family:monospace}
-.month{color:#FFD700;font-size:14px;font-weight:bold;display:flex;align-items:center;gap:6px}
-.season-tag{font-size:10px;padding:1px 6px;border-radius:3px;font-weight:normal}
-.season-card{background:#141414;border:1px solid #2a2a2a;border-radius:10px;padding:6px 10px 4px;flex-shrink:0}
-.sc-label{font-size:10px;color:#5a5a5a;font-family:monospace;margin-bottom:3px;display:flex;justify-content:space-between}
-.sc-hint{font-size:9px;font-weight:bold}
-.season-bar{position:relative;height:20px;background:#0a0a0a;border:1px solid #1a1a1a;border-radius:6px;display:flex;align-items:center;padding:0 1px}
-.sb-marker{flex:1;text-align:center;font-size:8px;color:#4a4a4a;font-family:monospace;position:relative;z-index:1;cursor:help}
-.sb-current{color:#FFD700!important;font-weight:bold;font-size:10px!important;background:#2a2000;border-radius:3px}
-.sb-next{border-bottom:2px dashed #FFD700}
-.sb-peak{color:#FF9800!important}
-.sb-low{color:#87CEEB!important}
+.command-center {
+  background: #0a0a0a;
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  position: relative;
+}
+.cc-scroll {
+  height: 100%;
+}
+.cc-body-inner {
+  min-height: 100%;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 10px 12px;
+}
+.cc-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-shrink: 0;
+}
+.title { color: #4CAF50; font-size: 16px; font-weight: bold; font-family: monospace; }
+.month { color: #FFD700; font-size: 14px; font-weight: bold; display: flex; align-items: center; gap: 6px; }
+.season-tag { font-size: 10px; padding: 1px 6px; border-radius: 3px; font-weight: normal; }
+
+/* 季节条 */
+.season-bar { position: relative; height: 22px; background: #141414; border: 1px solid #2a2a2a; border-radius: 8px; margin-top: 4px; display: flex; align-items: center; padding: 0 2px; flex-shrink: 0; }
+.sb-marker { flex: 1; text-align: center; font-size: 9px; color: #4a4a4a; font-family: monospace; position: relative; z-index: 1; cursor: help; }
+.sb-current { color: #FFD700 !important; font-weight: bold; }
+.sb-peak { color: #FF9800 !important; }
+.sb-low { color: #87CEEB !important; }
+.sb-pointer { position: absolute; top: -8px; font-size: 10px; color: #FFD700; transform: translateX(-50%); transition: left 0.3s; }
+
 .hero-metrics{display:flex;gap:8px;flex-shrink:0}
 .hm-card{flex:1;background:#141414;border:1px solid #2a2a2a;border-radius:10px;padding:8px 12px;display:flex;flex-direction:column;gap:3px}
 .hm-card.profit{border-color:#1a3a1a}
@@ -1530,6 +1574,7 @@ onMounted(async () => {
 .hm-value{font-size:20px;font-weight:bold;font-family:monospace}
 .clr-profit{color:#4CAF50}
 .clr-loss{color:#f44336}
+
 .fatigue-section{flex-shrink:0;background:#141414;border:1px solid #2a2a2a;border-radius:12px;padding:10px 14px}
 .fs-header{display:flex;align-items:center;gap:10px;font-size:13px;color:#9a9a9a;font-family:monospace;margin-bottom:4px}
 .fs-eff{color:#5a5a5a;font-size:12px}
@@ -1538,10 +1583,12 @@ onMounted(async () => {
 .ft-zone{position:absolute;top:0;bottom:0}
 .ft-pointer{position:absolute;top:0;width:0;height:0;border-left:6px solid transparent;border-right:6px solid transparent;border-bottom:11px solid #4CAF50;transform:translateX(-6px);transition:left 0.3s;z-index:1}
 .ft-labels{display:flex;justify-content:space-between;font-size:10px;color:#5a5a5a;font-family:monospace;margin-top:2px}
+
 .env-grid{display:grid;grid-template-columns:1fr 1fr;gap:8px;flex-shrink:0}
 .env-card{background:#141414;border:1px solid #2a2a2a;border-radius:10px;padding:8px 12px;display:flex;flex-direction:column;align-items:center;gap:3px}
 .env-label{font-size:11px;color:#5a5a5a;font-family:monospace}
 .env-value{font-size:17px;font-weight:bold;font-family:monospace}
+
 .fingerprint-card{flex-shrink:0;background:#141414;border:1px solid #2a2a2a;border-radius:12px;padding:12px 14px}
 .fp-header{display:flex;align-items:center;gap:10px;margin-bottom:8px}
 .fp-header>span:first-child{font-size:13px;color:#9a9a9a;font-family:monospace}
@@ -1554,6 +1601,7 @@ onMounted(async () => {
 .fp-fill{height:100%;border-radius:4px;transition:width 0.5s cubic-bezier(0.4,0,0.2,1);min-width:0}
 .fp-pct{font-size:11px;font-weight:bold;font-family:monospace;width:32px;text-align:right}
 .fp-insight{font-size:11px;color:#5a5a5a;font-family:monospace;line-height:1.5;border-top:1px solid #1a1a1a;padding-top:8px}
+
 .ops-card{background:#141414;border:1px solid #2a2a2a;border-radius:12px;padding:12px 14px;flex-shrink:0;display:flex;flex-direction:column;gap:6px}
 .ops-row{display:flex;justify-content:space-between;align-items:center}
 .ops-label{font-size:12px;color:#5a5a5a;font-family:monospace}
@@ -1566,6 +1614,7 @@ onMounted(async () => {
 .cost-labels span{font-size:11px;font-family:monospace}
 .cs-seg:last-child{border-radius:0 4px 4px 0}
 .cs-seg:only-child{border-radius:4px}
+
 .decision-panels{flex-shrink:0;display:flex;flex-direction:column;gap:8px}
 .dp-group{background:#141414;border:1px solid #2a2a2a;border-radius:10px;padding:8px 12px}
 .dp-title{font-size:12px;color:#9a9a9a;font-family:monospace;margin-bottom:6px}
@@ -1574,22 +1623,26 @@ onMounted(async () => {
 .dp-label{font-size:11px;color:#6a6a6a;font-family:monospace;width:36px;text-align:right}
 .dp-val{font-size:12px;font-weight:bold;font-family:monospace;color:#9a9a9a;min-width:60px;text-align:right}
 .dp-sub{font-size:10px;color:#5a5a5a}
+
 .goal-track{flex-shrink:0;background:#141414;border:1px solid #2a2a2a;border-radius:12px;padding:6px 14px}
 .gt-header{display:flex;justify-content:space-between;font-size:12px;color:#9a9a9a;font-family:monospace}
 .gt-pct{color:#4CAF50;font-weight:bold}
 .gt-track{height:8px;background:#1a1a1a;border-radius:4px;overflow:hidden;margin:4px 0;position:relative}
 .gt-fill{height:100%;background:linear-gradient(90deg,#4CAF50,#8BC34A);border-radius:4px;transition:width 0.5s}
 .gt-label{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;font-size:9px;color:#FFD700;font-family:monospace}
+
 .victory-banner{flex-shrink:0;background:linear-gradient(135deg,#1a2a0a,#2a1a0a);border:1px solid #FFD700;border-radius:12px;padding:10px 14px;text-align:center}
 .vb-icon{font-size:28px}
 .vb-text{font-size:14px;color:#FFD700;font-weight:bold;font-family:monospace}
 .vb-sub{font-size:11px;color:#9a9a9a}
+
 .year-chart-wrap{flex-shrink:0;background:#141414;border:1px solid #2a2a2a;border-radius:12px;padding:10px 14px;margin-top:6px}
 .yc-header{font-size:12px;color:#9a9a9a;font-family:monospace;margin-bottom:6px}
 .yc-chart{display:flex;align-items:flex-end;gap:4px;height:60px}
 .yc-bar{flex:1;border-radius:3px 3px 0 0;transition:height 0.3s,opacity 0.3s;min-width:12px;cursor:help}
 .yc-labels{display:flex;gap:4px;margin-top:2px}
 .yc-label{flex:1;text-align:center;font-size:9px;color:#5a5a5a}
+
 .inspector-sheet{position:absolute;bottom:54px;left:0;right:0;height:74%;z-index:20;background:#0a0a0a;border-top:1px solid #2a2a2a;border-radius:16px 16px 0 0;box-shadow:0 -8px 30px rgba(0,0,0,0.5);display:flex;flex-direction:column;padding:4px 14px 14px;overflow-y:auto}
 .is-handle{display:flex;justify-content:center;padding:6px 0 8px;flex-shrink:0}
 .is-handle-bar{width:40px;height:4px;border-radius:2px;background:#2a2a2a}
@@ -1614,12 +1667,11 @@ onMounted(async () => {
 .is-empty{font-size:12px;color:#2a2a2a;font-style:italic;font-family:monospace;margin-bottom:10px}
 .sheet-enter-active{transition:transform 0.35s cubic-bezier(0.4,0,0.2,1)}
 .sheet-leave-active{transition:transform 0.25s cubic-bezier(0.4,0,0.2,1)}
+.sheet-leave-from{transform:translateY(0)}
 .sheet-enter-from{transform:translateY(100%)}
 .sheet-leave-to{transform:translateY(100%)}
 .sheet-enter-to{transform:translateY(0)}
-.sheet-leave-from{transform:translateY(0)}
 .bottom-bar{flex-shrink:0;margin-top:auto;background:linear-gradient(180deg,transparent 0%,#0a0a0a 60%);padding:10px 12px;border-top:1px solid #2a2a2a;position:sticky;bottom:0}
 .bb-row{display:flex;align-items:center;gap:10px}
 .bb-main{flex:1!important;letter-spacing:1px;font-weight:bold;padding:14px 0!important;font-size:16px!important}
 </style>
-                              
